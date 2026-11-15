@@ -1,0 +1,265 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ post.title }}{% endblock %}
+
+{% block main %}
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <!-- Post Main Card -->
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body p-4 p-md-5">
+                <!-- Header badges -->
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge {{ 'badge-request' if post.post_type == 'request' else 'badge-offer' }} text-uppercase px-3 py-2">
+                            <i class="fa-solid {{ 'fa-hand-holding-hand' if post.post_type == 'request' else 'fa-gift' }} me-1"></i>
+                            {{ post.post_type }}
+                        </span>
+                        <span class="badge bg-secondary px-3 py-2">
+                            <i class="fa-solid fa-tag me-1"></i> {{ post.category }}
+                        </span>
+                        {% if post.urgency == 'urgent' %}
+                        <span class="badge bg-danger px-3 py-2 animate-pulse">
+                            <i class="fa-solid fa-triangle-exclamation me-1"></i> URGENT
+                        </span>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <span class="badge status-badge-{{ post.status }} px-3 py-2 text-capitalize">
+                            Status: {{ post.status.replace('_', ' ') }}
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Title & Meta -->
+                <h2 class="fw-bold text-dark mb-3">{{ post.title }}</h2>
+                <div class="d-flex flex-wrap align-items-center gap-3 text-muted small pb-3 mb-4 border-bottom">
+                    <span>
+                        <i class="fa-solid fa-user me-1 text-primary"></i> Posted by 
+                        <a href="/profile/{{ post.username }}" class="text-decoration-none fw-semibold">{{ post.username }}</a>
+                    </span>
+                    <span><i class="fa-solid fa-location-dot me-1 text-danger"></i> {{ post.neighborhood }}</span>
+                    <span><i class="fa-regular fa-clock me-1"></i> {{ post.created_at }}</span>
+                    {% if post.expires_at %}
+                    <span><i class="fa-regular fa-calendar-xmark me-1 text-warning"></i> Expires: {{ post.expires_at }}</span>
+                    {% endif %}
+                </div>
+
+                <!-- Post Description -->
+                <div class="post-content lead fs-6 mb-4 text-secondary" style="white-space: pre-wrap;">{{ post.description }}</div>
+
+                <!-- Emergency Notice if urgent or category emergency -->
+                {% if post.urgency == 'urgent' or post.category == 'Emergency Aid' %}
+                <div class="alert alert-warning py-2 px-3 small mb-4">
+                    <i class="fa-solid fa-shield-halved me-1 text-danger"></i>
+                    <strong>Emergency Aid Notice:</strong> NeighborGrid is for grassroots neighbor assistance. For life-threatening emergencies, fires, or medical crises, always call official emergency response services immediately.
+                </div>
+                {% endif %}
+
+                <!-- Lifecycle / Action Bar for Owner -->
+                {% if is_owner %}
+                <div class="border rounded-3 p-3 bg-light mb-4">
+                    <h6 class="fw-bold mb-2"><i class="fa-solid fa-gear me-1"></i> Manage Your Post</h6>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% if post.status == 'open' %}
+                        <a href="/post/{{ post.id }}/edit" class="btn btn-outline-primary btn-sm">
+                            <i class="fa-solid fa-pen-to-square me-1"></i> Edit Post
+                        </a>
+                        <form action="/post/{{ post.id }}/cancel" method="post" onsubmit="return confirm('Are you sure you want to cancel this post?');">
+                            <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                            <button type="submit" class="btn btn-outline-danger btn-sm">
+                                <i class="fa-solid fa-ban me-1"></i> Cancel Post
+                            </button>
+                        </form>
+                        {% elif post.status == 'in_progress' %}
+                        <form action="/post/{{ post.id }}/complete" method="post" onsubmit="return confirm('Mark this neighbor collaboration as completed?');">
+                            <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                            <button type="submit" class="btn btn-success btn-sm">
+                                <i class="fa-solid fa-circle-check me-1"></i> Mark as Completed
+                            </button>
+                        </form>
+                        <form action="/post/{{ post.id }}/cancel" method="post" onsubmit="return confirm('Cancel this in-progress post?');">
+                            <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                            <button type="submit" class="btn btn-outline-danger btn-sm">
+                                <i class="fa-solid fa-ban me-1"></i> Cancel
+                            </button>
+                        </form>
+                        {% elif post.status == 'completed' %}
+                        <span class="text-success fw-semibold"><i class="fa-solid fa-check-double me-1"></i> This task was completed successfully on {{ post.completed_at }}.</span>
+                        {% else %}
+                        <span class="text-muted"><i class="fa-solid fa-circle-xmark me-1"></i> This post was cancelled.</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Privacy & Contact Exchange Box (Only revealed if matched/accepted) -->
+                {% if accepted_match %}
+                    {% if is_owner or is_accepted_responder %}
+                    <div class="alert alert-success p-3 border-2 mb-4">
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <i class="fa-solid fa-handshake-angle text-success fs-4"></i>
+                            <h5 class="alert-heading fw-bold mb-0">Help Connection Confirmed!</h5>
+                        </div>
+                        <p class="small mb-2 text-dark">
+                            Both parties agreed to connect. In accordance with NeighborGrid privacy principles, direct contact details are revealed below:
+                        </p>
+                        <div class="row g-2 mt-1">
+                            <div class="col-md-6">
+                                <div class="bg-white p-2 rounded border">
+                                    <strong class="d-block small text-muted">Post Creator ({{ post.username }})</strong>
+                                    <div><i class="fa-solid fa-envelope me-1 text-primary"></i> {{ post.email }}</div>
+                                    {% if post.phone %}
+                                    <div><i class="fa-solid fa-phone me-1 text-success"></i> {{ post.phone }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="bg-white p-2 rounded border">
+                                    <strong class="d-block small text-muted">Accepted Helper ({{ accepted_match.responder_username }})</strong>
+                                    <div><i class="fa-solid fa-envelope me-1 text-primary"></i> {{ accepted_match.responder_email }}</div>
+                                    {% if accepted_match.responder_phone %}
+                                    <div><i class="fa-solid fa-phone me-1 text-success"></i> {{ accepted_match.responder_phone }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endif %}
+
+                <!-- Response / Offer Form for other logged-in neighbors -->
+                {% if session.get('user_id') and not is_owner and post.status == 'open' %}
+                    {% if user_match %}
+                    <div class="alert alert-info d-flex align-items-center justify-content-between p-3 mb-4">
+                        <div>
+                            <i class="fa-solid fa-paper-plane me-2"></i>
+                            <strong>You offered to help on this post.</strong> Current status: 
+                            <span class="badge bg-primary text-uppercase">{{ user_match.status }}</span>
+                            {% if user_match.message %}
+                            <div class="small text-muted mt-1">"{{ user_match.message }}"</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="card border-primary-subtle bg-light mb-4">
+                        <div class="card-body p-3 p-md-4">
+                            <h5 class="fw-bold mb-2">
+                                <i class="fa-solid fa-hand-holding-heart text-primary me-2"></i>
+                                {% if post.post_type == 'request' %}Offer to Help This Neighbor{% else %}Request to Connect / Accept Offer{% endif %}
+                            </h5>
+                            <p class="text-muted small mb-3">
+                                Send a message to {{ post.username }}. Your direct contact info will stay private until {{ post.username }} accepts your response.
+                            </p>
+                            <form action="/post/{{ post.id }}/respond" method="post">
+                                <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                                <div class="mb-3">
+                                    <textarea class="form-control" name="message" rows="2" placeholder="Write a brief, friendly message (e.g. 'I have a 6ft ladder you can borrow anytime this weekend')..."></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-primary fw-semibold px-4">
+                                    <i class="fa-solid fa-paper-plane me-1"></i> Send Offer / Response
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endif %}
+
+                <!-- Report Button Modal Trigger -->
+                {% if session.get('user_id') and not is_owner %}
+                <div class="d-flex justify-content-end">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#reportModal">
+                        <i class="fa-solid fa-flag text-danger me-1"></i> Report Post
+                    </button>
+                </div>
+
+                <!-- Report Modal -->
+                <div class="modal fade" id="reportModal" tabindex="-1" aria-labelledby="reportModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <form action="/post/{{ post.id }}/report" method="post">
+                                <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                                <div class="modal-header">
+                                    <h5 class="modal-title fw-bold" id="reportModalLabel">
+                                        <i class="fa-solid fa-flag text-danger me-1"></i> Report Post to Moderation
+                                    </h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <p class="small text-muted mb-3">
+                                        Help keep NeighborGrid safe. Please specify why this post violates community guidelines:
+                                    </p>
+                                    <div class="mb-3">
+                                        <label for="reason" class="form-label fw-semibold">Reason for Report <span class="text-danger">*</span></label>
+                                        <textarea class="form-control" id="reason" name="reason" rows="3" placeholder="Commercial sales, money exchange, unsafe items, harassment, inappropriate content..." required></textarea>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="submit" class="btn btn-danger fw-semibold">Submit Report</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Responses Section for the Post Owner -->
+        {% if is_owner %}
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3 border-bottom">
+                <h5 class="fw-bold mb-0">
+                    <i class="fa-solid fa-inbox text-primary me-2"></i> Responses from Neighbors ({{ responses|length }})
+                </h5>
+            </div>
+            <div class="card-body p-4">
+                {% if responses %}
+                    <div class="list-group list-group-flush">
+                    {% for r in responses %}
+                        <div class="list-group-item px-0 py-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                            <div>
+                                <div class="d-flex align-items-center gap-2 mb-1">
+                                    <a href="/profile/{{ r.username }}" class="fw-bold text-decoration-none text-dark">
+                                        <i class="fa-solid fa-user-circle text-primary me-1"></i> {{ r.username }}
+                                    </a>
+                                    <span class="badge bg-light text-muted border small">{{ r.created_at }}</span>
+                                    <span class="badge status-badge-{{ r.status }}">{{ r.status }}</span>
+                                </div>
+                                <p class="text-secondary mb-1 small">
+                                    {{ r.message if r.message else 'Offered to help with this post.' }}
+                                </p>
+                            </div>
+
+                            {% if post.status == 'open' and r.status == 'pending' %}
+                            <div class="d-flex gap-2">
+                                <form action="/match/{{ r.id }}/accept" method="post" onsubmit="return confirm('Accept this neighbor? This will share contact details to coordinate.');">
+                                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                                    <button type="submit" class="btn btn-success btn-sm fw-semibold">
+                                        <i class="fa-solid fa-check me-1"></i> Accept
+                                    </button>
+                                </form>
+                                <form action="/match/{{ r.id }}/decline" method="post" onsubmit="return confirm('Decline this offer?');">
+                                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm">
+                                        <i class="fa-solid fa-xmark me-1"></i> Decline
+                                    </button>
+                                </form>
+                            </div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-4 text-muted">
+                        <i class="fa-regular fa-comments display-6 mb-2 text-muted"></i>
+                        <p class="mb-0">No neighbor responses yet. We will notify you when a neighbor reaches out!</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,151 @@
+{% extends "layout.html" %}
+
+{% block title %}Neighbor Activity Feed{% endblock %}
+
+{% block main %}
+<!-- Impact Counter & Header Hero -->
+<div class="hero-section rounded-4 p-4 p-md-5 mb-4 text-white shadow-sm position-relative overflow-hidden">
+    <div class="row align-items-center">
+        <div class="col-lg-8">
+            <span class="badge bg-warning text-dark px-3 py-2 rounded-pill fw-bold mb-2">
+                <i class="fa-solid fa-location-dot me-1"></i> 
+                {{ session.get("neighborhood") if session.get("user_id") else "Hyperlocal Community Mutual Aid" }}
+            </span>
+            <h1 class="display-5 fw-bold mb-2">
+                NeighborGrid
+            </h1>
+            <p class="lead mb-3 text-white-50">
+                Share tools, lend a hand, and strengthen your community. Free, direct, and safe neighbor-to-neighbor assistance.
+            </p>
+            {% if not session.get("user_id") %}
+            <div class="d-flex gap-2">
+                <a href="/register" class="btn btn-warning fw-semibold px-4 py-2 text-dark">
+                    <i class="fa-solid fa-user-plus me-1"></i> Join Your Neighborhood
+                </a>
+                <a href="/login" class="btn btn-outline-light px-4 py-2">
+                    <i class="fa-solid fa-right-to-bracket me-1"></i> Log In
+                </a>
+            </div>
+            {% else %}
+            <div class="d-flex gap-2">
+                <a href="/post/new" class="btn btn-warning fw-bold px-4 py-2 text-dark shadow-sm">
+                    <i class="fa-solid fa-circle-plus me-1"></i> Post a Request or Offer
+                </a>
+            </div>
+            {% endif %}
+        </div>
+        <div class="col-lg-4 mt-4 mt-lg-0 text-center">
+            <div class="stat-card bg-white text-dark rounded-3 p-3 p-md-4 shadow">
+                <div class="display-4 fw-bold text-primary mb-0" id="impactCount">{{ impact_count }}</div>
+                <div class="text-muted fw-semibold small text-uppercase">Neighbors Helped Locally</div>
+                <p class="small text-muted mt-2 mb-0">
+                    <i class="fa-solid fa-check-circle text-success me-1"></i> Completed acts of mutual aid in your area!
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Feed Filter Controls -->
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body p-3 p-md-4">
+        <div class="row g-3 align-items-center">
+            <div class="col-md-5">
+                <div class="input-group">
+                    <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+                    <input type="text" id="searchInput" class="form-control bg-light border-start-0" placeholder="Search requests and offers by keyword...">
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <select id="typeFilter" class="form-select">
+                    <option value="all">All Types (Requests &amp; Offers)</option>
+                    <option value="request">Requests Only</option>
+                    <option value="offer">Offers Only</option>
+                </select>
+            </div>
+            <div class="col-md-4 col-sm-6">
+                <select id="categoryFilter" class="form-select">
+                    <option value="all">All Categories</option>
+                    {% for cat in categories %}
+                        <option value="{{ cat.id }}">{{ cat.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Active Feed Section -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="fw-bold mb-0">
+        <i class="fa-solid fa-rss text-primary me-2"></i> 
+        Active Posts in <span class="text-primary">{{ current_neighborhood }}</span>
+    </h4>
+    <span class="badge bg-light text-muted border px-3 py-2 small" id="feedCount">
+        Showing {{ posts|length }} post{{ 's' if posts|length != 1 else '' }}
+    </span>
+</div>
+
+<!-- Post Cards Container (Loaded by SSR initially, filtered live via JS) -->
+<div id="postsContainer" class="row g-3">
+    {% if posts %}
+        {% for post in posts %}
+        <div class="col-md-6 col-lg-4 post-grid-item" 
+             data-title="{{ post.title|lower }}" 
+             data-type="{{ post.post_type }}" 
+             data-category-id="{{ post.category_id }}"
+             data-urgent="{{ 'true' if post.urgency == 'urgent' else 'false' }}">
+            <div class="card h-100 shadow-sm border-0 post-card {{ 'border-urgent' if post.urgency == 'urgent' else '' }}">
+                <div class="card-body d-flex flex-column p-4">
+                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                        <span class="badge {{ 'badge-request' if post.post_type == 'request' else 'badge-offer' }} text-uppercase">
+                            <i class="fa-solid {{ 'fa-hand-holding-hand' if post.post_type == 'request' else 'fa-gift' }} me-1"></i>
+                            {{ post.post_type }}
+                        </span>
+                        <span class="badge bg-light text-secondary border small">
+                            {{ post.category }}
+                        </span>
+                    </div>
+
+                    {% if post.urgency == 'urgent' %}
+                    <div class="mb-2">
+                        <span class="badge bg-danger small animate-pulse">
+                            <i class="fa-solid fa-triangle-exclamation me-1"></i> URGENT
+                        </span>
+                    </div>
+                    {% endif %}
+
+                    <h5 class="card-title fw-bold text-dark mt-1 mb-2">
+                        <a href="/post/{{ post.id }}" class="text-dark text-decoration-none stretched-link">
+                            {{ post.title }}
+                        </a>
+                    </h5>
+
+                    <p class="card-text text-secondary small flex-grow-1 text-truncate-3">
+                        {{ post.description }}
+                    </p>
+
+                    <div class="border-top pt-3 mt-2 d-flex justify-content-between align-items-center text-muted small">
+                        <span><i class="fa-solid fa-user me-1 text-primary"></i> {{ post.username }}</span>
+                        <span><i class="fa-regular fa-clock me-1"></i> {{ post.created_at[:10] }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="col-12" id="emptyState">
+            <div class="text-center py-5 bg-light rounded-4 border">
+                <i class="fa-solid fa-house-chimney-crack text-muted display-4 mb-3"></i>
+                <h5 class="fw-bold">No active posts right now in {{ current_neighborhood }}</h5>
+                <p class="text-muted small mb-3">Be the first neighbor to post a request or offer to kickstart community activity!</p>
+                {% if session.get("user_id") %}
+                <a href="/post/new" class="btn btn-primary btn-sm px-3">
+                    <i class="fa-solid fa-plus me-1"></i> Create First Post
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

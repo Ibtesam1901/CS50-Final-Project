@@ -1,0 +1,87 @@
+{% extends "layout.html" %}
+
+{% block title %}Join NeighborGrid{% endblock %}
+
+{% block main %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4 p-md-5">
+                <div class="text-center mb-4">
+                    <div class="display-6 text-warning mb-2">
+                        <i class="fa-solid fa-hands-holding-child"></i>
+                    </div>
+                    <h3 class="fw-bold">Create an Account</h3>
+                    <p class="text-muted small">Connect with your local community to share help, tools, and skills.</p>
+                </div>
+
+                <form action="/register" method="post" autocomplete="off">
+                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-sm-6">
+                            <label for="username" class="form-label fw-semibold">Username <span class="text-danger">*</span></label>
+                            <input autofocus class="form-control" id="username" name="username" placeholder="e.g. sam_green" type="text" required>
+                        </div>
+                        <div class="col-sm-6">
+                            <label for="email" class="form-label fw-semibold">Email Address <span class="text-danger">*</span></label>
+                            <input class="form-control" id="email" name="email" placeholder="name@example.com" type="email" required>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-sm-7">
+                            <label for="neighborhood" class="form-label fw-semibold">Neighborhood / Locality <span class="text-danger">*</span></label>
+                            <input class="form-control" id="neighborhood" name="neighborhood" placeholder="e.g. Maple Heights, West End" type="text" required>
+                            <div class="form-text">Your feed is filtered strictly by your neighborhood.</div>
+                        </div>
+                        <div class="col-sm-5">
+                            <label for="pincode" class="form-label fw-semibold">Postal / ZIP Code</label>
+                            <input class="form-control" id="pincode" name="pincode" placeholder="e.g. 90210" type="text">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="phone" class="form-label fw-semibold">Phone Number / Contact Detail</label>
+                        <input class="form-control" id="phone" name="phone" placeholder="e.g. (555) 123-4567 or contact handle" type="text">
+                        <div class="form-text text-muted">
+                            <i class="fa-solid fa-lock text-success me-1"></i> Private: Only shared with neighbors after mutual agreement to help.
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="bio" class="form-label fw-semibold">Brief Bio / Community Intro</label>
+                        <textarea class="form-control" id="bio" name="bio" rows="2" placeholder="Tell neighbors a little about yourself or what you love helping with..."></textarea>
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-sm-6">
+                            <label for="password" class="form-label fw-semibold">Password <span class="text-danger">*</span></label>
+                            <input class="form-control" id="password" name="password" placeholder="Min. 8 characters" type="password" required>
+                        </div>
+                        <div class="col-sm-6">
+                            <label for="confirmation" class="form-label fw-semibold">Confirm Password <span class="text-danger">*</span></label>
+                            <input class="form-control" id="confirmation" name="confirmation" placeholder="Repeat password" type="password" required>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-light border small mb-4">
+                        <i class="fa-solid fa-circle-check text-primary me-1"></i>
+                        By registering, you agree to our <a href="/guidelines" target="_blank" class="fw-semibold">Community Guidelines</a> (no financial transactions, respect neighbor privacy, and follow safety protocols).
+                    </div>
+
+                    <button class="btn btn-primary w-100 py-2 fw-semibold" type="submit">
+                        <i class="fa-solid fa-user-check me-1"></i> Create Account
+                    </button>
+                </form>
+
+                <div class="text-center mt-4 pt-2 border-top">
+                    <p class="text-muted small mb-0">Already registered? 
+                        <a href="/login" class="fw-semibold text-primary text-decoration-none">Log in here</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

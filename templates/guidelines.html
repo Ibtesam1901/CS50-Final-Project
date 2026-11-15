@@ -1,0 +1,90 @@
+{% extends "layout.html" %}
+
+{% block title %}Safety & Community Guidelines{% endblock %}
+
+{% block main %}
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body p-4 p-md-5">
+                <div class="d-flex align-items-center gap-3 mb-4 border-bottom pb-3">
+                    <div class="display-6 text-primary">
+                        <i class="fa-solid fa-shield-heart"></i>
+                    </div>
+                    <div>
+                        <h2 class="fw-bold mb-1">NeighborGrid Community Guidelines</h2>
+                        <p class="text-muted mb-0">Principles for keeping our neighborhoods safe, cooperative, and respectful.</p>
+                    </div>
+                </div>
+
+                <!-- Emergency Notice Alert -->
+                <div class="alert alert-danger d-flex align-items-start gap-3 p-3 mb-4" role="alert">
+                    <i class="fa-solid fa-triangle-exclamation fs-3 flex-shrink-0 mt-1"></i>
+                    <div>
+                        <h5 class="alert-heading fw-bold mb-1">Emergency Services Notice</h5>
+                        <p class="mb-0">
+                            <strong>NeighborGrid is NEVER a replacement for 911 / emergency services.</strong> If you or anyone around you is in immediate physical danger, experiencing a medical crisis, or witnessing a fire or crime, stop and call emergency dispatch immediately.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="row g-4 mt-2">
+                    <div class="col-md-6">
+                        <div class="border rounded-3 p-3 h-100 bg-light">
+                            <h5 class="fw-bold text-success mb-2">
+                                <i class="fa-solid fa-hand-holding-heart me-2"></i> 1. Non-Commercial Mutual Aid
+                            </h5>
+                            <p class="text-muted small mb-0">
+                                NeighborGrid is built on community solidarity and mutual assistance. No money, barter demands, commercial selling, or tipping is allowed. Help is offered and accepted freely.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="border rounded-3 p-3 h-100 bg-light">
+                            <h5 class="fw-bold text-primary mb-2">
+                                <i class="fa-solid fa-user-shield me-2"></i> 2. Privacy &amp; Consent
+                            </h5>
+                            <p class="text-muted small mb-0">
+                                Personal phone numbers and direct contact details are kept strictly concealed until a post owner explicitly accepts an offer to help. Never share private neighbor information externally.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="border rounded-3 p-3 h-100 bg-light">
+                            <h5 class="fw-bold text-warning mb-2">
+                                <i class="fa-solid fa-street-view me-2"></i> 3. Safe Meeting Practices
+                            </h5>
+                            <p class="text-muted small mb-0">
+                                When lending tools, exchanging items, or meeting a neighbor for the first time, meet in well-lit public or semi-public areas (porches, building lobbies, curbside). Let someone know where you are going.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="border rounded-3 p-3 h-100 bg-light">
+                            <h5 class="fw-bold text-danger mb-2">
+                                <i class="fa-solid fa-ban me-2"></i> 4. Zero Tolerance for Misuse
+                            </h5>
+                            <p class="text-muted small mb-0">
+                                Harassment, discriminatory language, hate speech, illegal items or substances, and weapon requests are strictly prohibited. Violators will have their posts hidden and accounts permanently revoked.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 pt-3 border-top">
+                    <h5 class="fw-bold mb-2"><i class="fa-solid fa-flag me-2 text-danger"></i> Flagging &amp; Reporting</h5>
+                    <p class="text-muted small mb-3">
+                        If you ever see a post that violates these guidelines or poses safety concerns, click the <strong>"Report"</strong> button on the post card. Our community moderators review reported items continuously.
+                    </p>
+                    <a href="/" class="btn btn-primary">
+                        <i class="fa-solid fa-arrow-left me-1"></i> Back to Community Feed
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

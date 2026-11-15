@@ -1,0 +1,75 @@
+{% extends "layout.html" %}
+
+{% block title %}Neighbor Profile: {{ profile_user.username }}{% endblock %}
+
+{% block main %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <!-- Profile Card -->
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body p-4 p-md-5">
+                <div class="d-flex flex-column flex-sm-row align-items-center gap-4 text-center text-sm-start pb-4 border-bottom">
+                    <div class="profile-avatar bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fs-1 fw-bold shadow">
+                        {{ profile_user.username[0].upper() }}
+                    </div>
+                    <div>
+                        <div class="d-flex align-items-center justify-content-center justify-content-sm-start gap-2 mb-1">
+                            <h2 class="fw-bold mb-0">{{ profile_user.username }}</h2>
+                            {% if profile_user.is_admin %}
+                            <span class="badge bg-warning text-dark"><i class="fa-solid fa-shield-halved"></i> Admin</span>
+                            {% endif %}
+                        </div>
+                        <p class="text-muted mb-2">
+                            <i class="fa-solid fa-location-dot text-danger me-1"></i> {{ profile_user.neighborhood }}
+                            {% if profile_user.pincode %} ({{ profile_user.pincode }}){% endif %}
+                            &middot; <i class="fa-regular fa-calendar-check me-1"></i> Member since {{ profile_user.created_at[:10] }}
+                        </p>
+                        {% if profile_user.bio %}
+                        <p class="mb-0 text-secondary fst-italic">"{{ profile_user.bio }}"</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Neighbors Helped Counter / Reputation -->
+                <div class="row g-3 my-3 text-center">
+                    <div class="col-sm-6">
+                        <div class="p-3 bg-light rounded-3 border">
+                            <div class="display-6 fw-bold text-success">{{ helped_count }}</div>
+                            <div class="small text-uppercase text-muted fw-semibold">Acts of Neighbor Aid Completed</div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="p-3 bg-light rounded-3 border">
+                            <div class="display-6 fw-bold text-primary">{{ active_posts|length }}</div>
+                            <div class="small text-uppercase text-muted fw-semibold">Currently Active Posts</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Posts by User -->
+                <h5 class="fw-bold mt-4 mb-3">
+                    <i class="fa-solid fa-bullhorn text-primary me-2"></i> Active Posts by {{ profile_user.username }}
+                </h5>
+                {% if active_posts %}
+                <div class="list-group list-group-flush border rounded-3">
+                    {% for p in active_posts %}
+                    <a href="/post/{{ p.id }}" class="list-group-item list-group-item-action p-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="badge {{ 'badge-request' if p.post_type == 'request' else 'badge-offer' }} text-uppercase">
+                                {{ p.post_type }}
+                            </span>
+                            <span class="badge bg-light text-muted border">{{ p.category }}</span>
+                        </div>
+                        <h6 class="fw-bold mb-1 text-dark">{{ p.title }}</h6>
+                        <small class="text-muted">{{ p.created_at[:10] }} &middot; {{ p.neighborhood }}</small>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted small">No active requests or offers at the moment.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,145 @@
+{% extends "layout.html" %}
+
+{% block title %}Create a Post{% endblock %}
+
+{% block main %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4 p-md-5">
+                <div class="d-flex align-items-center gap-3 mb-4 border-bottom pb-3">
+                    <div class="display-6 text-primary">
+                        <i class="fa-solid fa-bullhorn"></i>
+                    </div>
+                    <div>
+                        <h2 class="fw-bold mb-1">Create a Post</h2>
+                        <p class="text-muted mb-0">Ask for a neighborly favor or offer your equipment &amp; skills.</p>
+                    </div>
+                </div>
+
+                <form action="/post/new" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+
+                    <!-- Post Type Radio Toggle -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold d-block">What would you like to do? <span class="text-danger">*</span></label>
+                        <div class="row g-2">
+                            <div class="col-sm-6">
+                                <input type="radio" class="btn-check" name="post_type" id="type_request" value="request" checked>
+                                <label class="btn btn-outline-danger w-100 py-3 text-start" for="type_request">
+                                    <div class="fw-bold fs-5"><i class="fa-solid fa-hand-holding-hand me-2"></i> Request Help / Borrow</div>
+                                    <small class="text-muted d-block mt-1">Ask neighbors for a tool, assistance, or favor</small>
+                                </label>
+                            </div>
+                            <div class="col-sm-6">
+                                <input type="radio" class="btn-check" name="post_type" id="type_offer" value="offer">
+                                <label class="btn btn-outline-success w-100 py-3 text-start" for="type_offer">
+                                    <div class="fw-bold fs-5"><i class="fa-solid fa-gift me-2"></i> Offer Help / Lend</div>
+                                    <small class="text-muted d-block mt-1">Lend equipment, share skills, or offer a hand</small>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Category & Urgency -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-7">
+                            <label for="category_id" class="form-label fw-semibold">Category <span class="text-danger">*</span></label>
+                            <select class="form-select" id="category_id" name="category_id" required>
+                                <option value="" disabled selected>Select a category...</option>
+                                {% for cat in categories %}
+                                    <option value="{{ cat.id }}" {% if cat.id == 6 %}data-emergency="true"{% endif %}>
+                                        {{ cat.name }} &mdash; {{ cat.description }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-5">
+                            <label for="urgency" class="form-label fw-semibold">Urgency Level <span class="text-danger">*</span></label>
+                            <select class="form-select" id="urgency" name="urgency" required>
+                                <option value="standard" selected>Standard (Regular priority)</option>
+                                <option value="urgent">Urgent (Needs attention soon)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Emergency warning banner dynamically toggled or for Emergency Aid -->
+                    <div id="emergencyWarning" class="alert alert-warning d-none py-2 px-3 small mb-3">
+                        <i class="fa-solid fa-triangle-exclamation text-danger me-1"></i>
+                        <strong>Notice:</strong> NeighborGrid is for neighborly assistance only. In case of fire, physical danger, or medical emergency, immediately call official emergency services.
+                    </div>
+
+                    <!-- Title -->
+                    <div class="mb-3">
+                        <label for="title" class="form-label fw-semibold">Post Title <span class="text-danger">*</span></label>
+                        <input class="form-control form-control-lg" id="title" name="title" placeholder="e.g. Need to borrow a step ladder for Saturday afternoon" maxlength="120" required>
+                        <div class="form-text">Keep it clear and specific (up to 120 characters).</div>
+                    </div>
+
+                    <!-- Description -->
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <label for="description" class="form-label fw-semibold mb-0">Detailed Description <span class="text-danger">*</span></label>
+                            <small class="text-muted" id="charCounter">0 / 1000 characters</small>
+                        </div>
+                        <textarea class="form-control" id="description" name="description" rows="5" maxlength="1000" placeholder="Provide details: what exactly do you need, when, approximate location in {{ session.get('neighborhood') }}, and any timing details..." required></textarea>
+                    </div>
+
+                    <!-- Expiry Date -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label for="expires_at" class="form-label fw-semibold">Optional Expiry Date</label>
+                            <input class="form-control" id="expires_at" name="expires_at" type="date">
+                            <div class="form-text">Post automatically closes if not matched by this date.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Neighborhood</label>
+                            <input class="form-control bg-light" value="{{ session.get('neighborhood') }}" disabled>
+                            <div class="form-text">Your post will automatically show to neighbors in <strong>{{ session.get('neighborhood') }}</strong>.</div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+                        <a href="/" class="btn btn-outline-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary px-4 py-2 fw-semibold">
+                            <i class="fa-solid fa-paper-plane me-1"></i> Publish Post
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const desc = document.getElementById('description');
+    const counter = document.getElementById('charCounter');
+    if (desc && counter) {
+        desc.addEventListener('input', () => {
+            counter.textContent = `${desc.value.length} / 1000 characters`;
+        });
+    }
+
+    const catSelect = document.getElementById('category_id');
+    const urgencySelect = document.getElementById('urgency');
+    const emWarning = document.getElementById('emergencyWarning');
+
+    function checkEmergencyNotice() {
+        const isUrgent = urgencySelect.value === 'urgent';
+        const selectedOpt = catSelect.options[catSelect.selectedIndex];
+        const isEmergencyCat = selectedOpt && selectedOpt.getAttribute('data-emergency') === 'true';
+        if (isUrgent || isEmergencyCat) {
+            emWarning.classList.remove('d-none');
+        } else {
+            emWarning.classList.add('d-none');
+        }
+    }
+
+    if (catSelect && urgencySelect && emWarning) {
+        catSelect.addEventListener('change', checkEmergencyNotice);
+        urgencySelect.addEventListener('change', checkEmergencyNotice);
+    }
+</script>
+{% endblock %}

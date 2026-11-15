@@ -1,0 +1,86 @@
+{% extends "layout.html" %}
+
+{% block title %}Edit Post{% endblock %}
+
+{% block main %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4 p-md-5">
+                <div class="d-flex align-items-center gap-3 mb-4 border-bottom pb-3">
+                    <div class="display-6 text-primary">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                    </div>
+                    <div>
+                        <h2 class="fw-bold mb-1">Edit Post</h2>
+                        <p class="text-muted mb-0">Update your open request or offer details.</p>
+                    </div>
+                </div>
+
+                <form action="/post/{{ post.id }}/edit" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Post Type</label>
+                            <input class="form-control bg-light" value="{{ post.post_type.capitalize() }}" disabled>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="category_id" class="form-label fw-semibold">Category <span class="text-danger">*</span></label>
+                            <select class="form-select" id="category_id" name="category_id" required>
+                                {% for cat in categories %}
+                                    <option value="{{ cat.id }}" {% if cat.id == post.category_id %}selected{% endif %}>
+                                        {{ cat.name }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="title" class="form-label fw-semibold">Post Title <span class="text-danger">*</span></label>
+                        <input class="form-control" id="title" name="title" value="{{ post.title }}" maxlength="120" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <label for="description" class="form-label fw-semibold mb-0">Description <span class="text-danger">*</span></label>
+                            <small class="text-muted" id="charCounter">{{ post.description|length }} / 1000 characters</small>
+                        </div>
+                        <textarea class="form-control" id="description" name="description" rows="5" maxlength="1000" required>{{ post.description }}</textarea>
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label for="urgency" class="form-label fw-semibold">Urgency</label>
+                            <select class="form-select" id="urgency" name="urgency">
+                                <option value="standard" {% if post.urgency == 'standard' %}selected{% endif %}>Standard</option>
+                                <option value="urgent" {% if post.urgency == 'urgent' %}selected{% endif %}>Urgent</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+                        <a href="/post/{{ post.id }}" class="btn btn-outline-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary px-4 py-2 fw-semibold">
+                            <i class="fa-solid fa-floppy-disk me-1"></i> Save Changes
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const desc = document.getElementById('description');
+    const counter = document.getElementById('charCounter');
+    if (desc && counter) {
+        desc.addEventListener('input', () => {
+            counter.textContent = `${desc.value.length} / 1000 characters`;
+        });
+    }
+</script>
+{% endblock %}
