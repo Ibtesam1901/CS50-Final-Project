@@ -1,9 +1,10 @@
 :root {
-    --primary-blue: #1e3a8a;
-    --primary-light: #2563eb;
-    --accent-gold: #f59e0b;
-    --bg-main: #f8fafc;
-    --text-dark: #0f172a;
+    --primary-blue: #0f3d3e;        /* Deep Teal Green */
+    --accent-saffron: #f97316;      /* Rich Indian Saffron */
+    --accent-marigold: #eab308;     /* Warm Marigold Yellow */
+    --accent-green: #15803d;        /* Lush Green */
+    --bg-main: #fcfbf9;            /* Warm Off-white / Ivory */
+    --text-dark: #1e293b;
     --text-muted: #64748b;
     --radius-md: 14px;
 }
@@ -14,13 +15,15 @@ body {
     color: var(--text-dark);
 }
 
+/* Indian-styled Header & Gradients */
 .navbar {
-    background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%) !important;
-    backdrop-filter: blur(8px);
+    background: linear-gradient(135deg, #064e3b 0%, #0f3d3e 50%, #111827 100%) !important;
+    border-bottom: 2px solid var(--accent-saffron);
 }
 
 .hero-section {
-    background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 50%, #3b82f6 100%);
+    background: linear-gradient(135deg, #064e3b 0%, #065f46 45%, #047857 70%, #d97706 100%);
+    box-shadow: 0 10px 25px -5px rgba(6, 78, 59, 0.25) !important;
 }
 
 .card {
@@ -30,15 +33,17 @@ body {
 
 .post-card {
     border: 1px solid #e2e8f0;
+    background: #ffffff;
 }
 
 .post-card:hover {
     transform: translateY(-4px);
-    box-shadow: 0 12px 30px -6px rgba(0, 0, 0, 0.09) !important;
+    box-shadow: 0 12px 30px -6px rgba(15, 61, 62, 0.12) !important;
+    border-color: #cbd5e1;
 }
 
 .border-urgent {
-    border-left: 5px solid #dc3545 !important;
+    border-left: 5px solid #dc2626 !important;
 }
 
 .badge-request {
@@ -50,6 +55,12 @@ body {
 .badge-offer {
     background-color: #dcfce7;
     color: #166534;
+    font-weight: 700;
+}
+
+.badge-saffron {
+    background-color: #ffedd5;
+    color: #c2410c;
     font-weight: 700;
 }
 
@@ -134,16 +145,16 @@ body {
     margin-bottom: 4px;
 }
 .stepper-item.completed .step-counter {
-    background-color: #22c55e;
+    background-color: #059669;
     color: white;
 }
 .stepper-item.completed::before {
-    border-color: #22c55e;
+    border-color: #059669;
 }
 .stepper-item.active .step-counter {
-    background-color: #3b82f6;
+    background-color: var(--accent-saffron);
     color: white;
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.25);
 }
 .stepper-item .step-name {
     font-size: 12px;
@@ -182,4 +193,10 @@ body {
 
 .hover-white:hover {
     color: #ffffff !important;
+}
+
+/* Location modal styling */
+.location-prompt-card {
+    border-top: 4px solid var(--accent-saffron);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15) !important;
 }

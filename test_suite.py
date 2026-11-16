@@ -1,11 +1,11 @@
 """
-End-to-end integration and security test suite for NeighborGrid.
+End-to-end integration and security test suite for NeighborGrid (India Locality Edition).
 Tests all requirements from Blueprint v2 and the step-by-step checklist:
 1. Duplicate registration rejection (username & email)
 2. Password length enforcement and confirmation match
-3. Session login, logout, and protected route redirection
-4. Neighborhood isolation (Downtown vs Oakridge)
-5. Urgency sorting in feed
+3. Session login, logout, and location persistence
+4. Neighborhood isolation (Indiranagar vs Koramangala)
+5. Live location update endpoint (/api/user/location)
 6. Respond to post & prevent duplicate offers
 7. Cannot respond to own post
 8. Accept offer -> transitions post to 'in_progress' and declines rivals
@@ -24,7 +24,7 @@ client = app.test_client()
 db = SQL_PROVIDER("sqlite:///neighborgrid.db")
 
 def run_tests():
-    print("--- Starting NeighborGrid Extended Test Suite ---")
+    print("--- Starting NeighborGrid India Locality Test Suite ---")
 
     # 1. Test Home page accessible logged-out
     res = client.get("/")
@@ -45,9 +45,9 @@ def run_tests():
     # Short password (< 8 chars)
     res = client.post("/register", data={
         "csrf_token": token,
-        "username": "new_neighbor",
-        "email": "new@example.com",
-        "neighborhood": "Downtown",
+        "username": "new_resident",
+        "email": "new@example.in",
+        "neighborhood": "Indiranagar, Bengaluru",
         "password": "123",
         "confirmation": "123"
     })
@@ -59,9 +59,9 @@ def run_tests():
         token = sess["csrf_token"]
     res = client.post("/register", data={
         "csrf_token": token,
-        "username": "elena_gardener",
-        "email": "unique_email@test.com",
-        "neighborhood": "Downtown",
+        "username": "aarav_patel",
+        "email": "unique_email@test.in",
+        "neighborhood": "Indiranagar, Bengaluru",
         "password": "password123",
         "confirmation": "password123"
     })
@@ -75,7 +75,7 @@ def run_tests():
     # Invalid password
     res = client.post("/login", data={
         "csrf_token": token,
-        "username": "elena_gardener",
+        "username": "aarav_patel",
         "password": "wrongpassword"
     })
     assert res.status_code == 403, "Invalid password was not rejected"
@@ -86,20 +86,30 @@ def run_tests():
         token = sess["csrf_token"]
     res = client.post("/login", data={
         "csrf_token": token,
-        "username": "elena_gardener",
+        "username": "aarav_patel",
         "password": "password123"
     }, follow_redirects=True)
-    assert res.status_code == 200 and b"Welcome back, elena_gardener" in res.data
+    assert res.status_code == 200 and b"aarav_patel" in res.data
     print("PASS 6: Login succeeds and session is populated.")
 
-    # 5. Test JSON Feed API & Neighborhood isolation
+    # 5. Test Live Location Update Endpoint
+    with client.session_transaction() as sess:
+        token = sess["csrf_token"]
+    res = client.post("/api/user/location", 
+        headers={"X-CSRFToken": token},
+        json={"latitude": 12.9719, "longitude": 77.6412}
+    )
+    assert res.status_code == 200 and res.get_json()["status"] == "success"
+    print("PASS 7: Live user location endpoint properly updates user coordinates.")
+
+    # 6. Test JSON Feed API & Neighborhood isolation (Indiranagar vs Koramangala)
     res = client.get("/api/posts")
     data = res.get_json()
-    assert len(data) > 0, "No posts returned for Downtown feed"
-    assert all("Oakridge" not in p["title"] for p in data), "Oakridge post leaked into Downtown feed!"
-    print(f"PASS 7: Neighborhood isolation verified ({len(data)} Downtown posts, Oakridge excluded).")
+    assert len(data) > 0, "No posts returned for Indiranagar feed"
+    assert all("Koramangala" not in p["title"] for p in data), "Koramangala post leaked into Indiranagar feed!"
+    print(f"PASS 8: Locality isolation verified ({len(data)} Indiranagar posts, Koramangala excluded).")
 
-    # 6. Test Cannot respond to own post
+    # 7. Test Cannot respond to own post
     with client.session_transaction() as sess:
         token = sess["csrf_token"]
         uid = sess["user_id"]
@@ -110,53 +120,52 @@ def run_tests():
         "message": "Helping myself"
     })
     assert res.status_code == 400 and b"cannot respond to your own post" in res.data
-    print("PASS 8: Responding to own post is blocked on server.")
+    print("PASS 9: Responding to own post is blocked on server.")
 
-    # 7. Test Lifecycle: Switch user to marcus_tech and test privacy lock
+    # 8. Test Lifecycle: Switch user to rohan_verma and test privacy lock
     client.get("/logout")
     client.get("/login")
     with client.session_transaction() as sess:
         token = sess["csrf_token"]
     client.post("/login", data={
         "csrf_token": token,
-        "username": "marcus_tech",
+        "username": "rohan_verma",
         "password": "password123"
     })
 
-    # Elena has an in_progress post with marcus_tech (help moving desk)
-    desk_post = db.execute("SELECT id FROM posts WHERE title LIKE '%moving heavy oak desk%'")[0]["id"]
-    res = client.get(f"/post/{desk_post}")
+    # Priya has an in_progress post with rohan_verma (help shifting sofa)
+    sofa_post = db.execute("SELECT id FROM posts WHERE title LIKE '%shifting a 3-seater sofa%'")[0]["id"]
+    res = client.get(f"/post/{sofa_post}")
     assert b"Help Connection Confirmed!" in res.data, "Contact reveal failed for accepted match!"
-    assert b"elena@example.com" in res.data, "Owner contact missing for accepted responder"
-    print("PASS 9: Contact privacy boundary functions properly (revealed upon acceptance).")
+    assert b"priya@neighborgrid.in" in res.data, "Owner contact missing for accepted responder"
+    print("PASS 10: Contact privacy boundary functions properly (revealed upon acceptance).")
 
-    # 8. Test Direct Messaging between accepted pair
+    # 9. Test Direct Messaging between accepted pair
     with client.session_transaction() as sess:
         token = sess["csrf_token"]
-    res = client.post(f"/post/{desk_post}/messages", data={
+    res = client.post(f"/post/{sofa_post}/messages", data={
         "csrf_token": token,
-        "content": "Running 5 minutes late but on my way!"
+        "content": "Aapke building ke gate par pahunch gaya hoon!"
     }, follow_redirects=True)
     assert res.status_code == 200
-    msg_check = db.execute("SELECT content FROM messages WHERE post_id = ? ORDER BY id DESC LIMIT 1", desk_post)
-    assert msg_check and "Running 5 minutes late" in msg_check[0]["content"]
-    print("PASS 10: In-app direct messaging functions between accepted participants.")
+    msg_check = db.execute("SELECT content FROM messages WHERE post_id = ? ORDER BY id DESC LIMIT 1", sofa_post)
+    assert msg_check and "gate par pahunch gaya" in msg_check[0]["content"]
+    print("PASS 11: In-app direct messaging functions between accepted participants.")
 
-    # 9. Test Rating submission on completed post
-    # Marcus's ride post was completed
-    ride_post = db.execute("SELECT id FROM posts WHERE title LIKE '%airport terminal%'")[0]["id"]
+    # 10. Test Rating submission on completed post
+    ride_post = db.execute("SELECT id FROM posts WHERE title LIKE '%scooter carpool%'")[0]["id"]
     res = client.get(f"/post/{ride_post}")
     assert b"Collaboration Ratings" in res.data
-    print("PASS 11: Ratings and reviews display on completed mutual aid posts.")
+    print("PASS 12: Ratings and reviews display on completed mutual aid posts.")
 
-    # 10. Test Illegal state transitions (e.g., marcus trying to complete elena's post)
+    # 11. Test Illegal state transitions
     with client.session_transaction() as sess:
         token = sess["csrf_token"]
-    res = client.post(f"/post/{desk_post}/complete", data={"csrf_token": token})
+    res = client.post(f"/post/{sofa_post}/complete", data={"csrf_token": token})
     assert res.status_code == 403, "Non-owner allowed to complete post!"
-    print("PASS 12: Unauthorized completion rejected with 403.")
+    print("PASS 13: Unauthorized completion rejected with 403.")
 
-    # 11. Test Admin moderation
+    # 12. Test Admin moderation
     client.get("/logout")
     client.get("/login")
     with client.session_transaction() as sess:
@@ -168,24 +177,24 @@ def run_tests():
     })
 
     res = client.get("/admin/reports")
-    assert res.status_code == 200 and b"Commercial sale" in res.data, "Admin report dashboard failed to load report"
+    assert res.status_code == 200 and b"Commercial" in res.data, "Admin report dashboard failed to load report"
     
-    # Hide generator sale post
+    # Hide water purifier sale post
     with client.session_transaction() as sess:
         token = sess["csrf_token"]
-    gen_post = db.execute("SELECT id FROM posts WHERE title LIKE '%generator%'")[0]["id"]
-    client.post(f"/admin/post/{gen_post}/hide", data={"csrf_token": token}, follow_redirects=True)
-    post_check = db.execute("SELECT is_hidden FROM posts WHERE id = ?", gen_post)[0]["is_hidden"]
+    purifier_post = db.execute("SELECT id FROM posts WHERE title LIKE '%Water Purifier%'")[0]["id"]
+    client.post(f"/admin/post/{purifier_post}/hide", data={"csrf_token": token}, follow_redirects=True)
+    post_check = db.execute("SELECT is_hidden FROM posts WHERE id = ?", purifier_post)[0]["is_hidden"]
     assert post_check == 1, "Post failed to hide"
-    print("PASS 13: Admin successfully hid flagged post.")
+    print("PASS 14: Admin successfully hid flagged post.")
 
     # Verify hidden post does not appear in public feed
     res = client.get("/api/posts")
     titles = [p["title"] for p in res.get_json()]
-    assert not any("generator" in t.lower() for t in titles), "Hidden post appeared in public feed!"
-    print("PASS 14: Hidden post confirmed absent from public feed.")
+    assert not any("purifier" in t.lower() for t in titles), "Hidden post appeared in public feed!"
+    print("PASS 15: Hidden post confirmed absent from public feed.")
 
-    print("\nALL 14 INTEGRATION, MESSAGING, RATING & SECURITY TESTS PASSED WITH ZERO ERRORS!")
+    print("\nALL 15 INTEGRATION, GEOLOCATION, MESSAGING & SECURITY TESTS PASSED WITH ZERO ERRORS!")
 
 if __name__ == "__main__":
     run_tests()

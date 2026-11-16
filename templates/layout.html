@@ -11,17 +11,20 @@
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Custom CSS -->
     <link href="{{ url_for('static', filename='css/styles.css') }}" rel="stylesheet">
 </head>
 <body class="d-flex flex-column min-vh-100">
     <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top shadow-sm">
+    <nav class="navbar navbar-expand-lg navbar-dark sticky-top shadow-sm">
         <div class="container">
             <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="/">
                 <i class="fa-solid fa-people-roof text-warning"></i>
-                <span>NeighborGrid</span>
+                <span class="d-flex align-items-center gap-1">
+                    <span>NeighborGrid</span>
+                    <span class="badge bg-warning text-dark px-2 py-0 ms-1" style="font-size: 10px; letter-spacing: 0.5px;">BHARAT</span>
+                </span>
             </a>
             <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navContent" aria-controls="navContent" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
@@ -29,7 +32,7 @@
             <div class="collapse navbar-collapse" id="navContent">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     <li class="nav-item">
-                        <a class="nav-link" href="/"><i class="fa-solid fa-house me-1"></i> Home Feed</a>
+                        <a class="nav-link" href="/"><i class="fa-solid fa-house me-1"></i> Mohalla Feed</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="/guidelines"><i class="fa-solid fa-shield-heart me-1"></i> Guidelines</a>
@@ -54,8 +57,8 @@
                     {% if session.get("user_id") %}
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle d-flex align-items-center gap-2" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            <span class="badge bg-light text-primary rounded-pill px-3 py-2 fw-semibold">
-                                <i class="fa-solid fa-user me-1"></i> {{ session.get("username") }}
+                            <span class="badge bg-light text-dark rounded-pill px-3 py-2 fw-semibold border">
+                                <i class="fa-solid fa-user me-1 text-success"></i> {{ session.get("username") }}
                             </span>
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end shadow border-0">
@@ -108,16 +111,47 @@
         {% block main %}{% endblock %}
     </main>
 
-    <!-- Footer with Emergency Notice -->
+    <!-- Location Permission Modal (Triggered automatically on first login if coordinates missing) -->
+    {% if session.get("user_id") and not session.get("has_location") %}
+    <div class="modal fade" id="locationPromptModal" tabindex="-1" aria-labelledby="locationPromptLabel" data-bs-backdrop="static" data-bs-keyboard="false" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content location-prompt-card border-0">
+                <div class="modal-body p-4 text-center">
+                    <div class="display-5 text-warning mb-3">
+                        <i class="fa-solid fa-location-crosshairs fa-bounce"></i>
+                    </div>
+                    <h4 class="fw-bold mb-2">Enable Your Mohalla / Locality Location</h4>
+                    <p class="text-secondary small mb-3">
+                        NeighborGrid works best when centered on your real surroundings. Grant location access so your live map pinpoints nearby help requests, tool sharing, and local errands within walking distance.
+                    </p>
+                    <div class="alert alert-light border small text-start py-2 px-3 mb-4">
+                        <i class="fa-solid fa-user-shield text-success me-1"></i>
+                        <strong>Privacy Guaranteed:</strong> We only store approximate coordinates to plot nearby pins; your exact flat/house number is never broadcast publicly.
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="button" class="btn btn-success py-2 fw-bold" id="grantLocationBtn">
+                            <i class="fa-solid fa-location-arrow me-1"></i> Share Live Location &amp; Open Map
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal" id="skipLocationBtn">
+                            I'll use my registered address for now
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Footer with Emergency Notice (Indian Emergency 112 / 100) -->
     <footer class="bg-dark text-light py-4 mt-auto border-top border-secondary">
         <div class="container">
             <div class="row align-items-center gy-3">
                 <div class="col-md-6 text-center text-md-start">
                     <p class="mb-1 fw-semibold">
-                        <i class="fa-solid fa-people-roof text-warning me-1"></i> NeighborGrid &copy; 2026 CS50x Final Project
+                        <i class="fa-solid fa-people-roof text-warning me-1"></i> NeighborGrid &copy; 2026 CS50x Final Project &middot; India Edition
                     </p>
                     <p class="small text-white-50 mb-0">
-                        A hyperlocal mutual-aid network connecting neighbors for help, tools, and community support.
+                        Hyperlocal community mutual-aid connecting neighbors across Indian mohallas, housing societies, and colonies.
                     </p>
                 </div>
                 <div class="col-md-6 text-center text-md-end">
@@ -129,8 +163,8 @@
             <hr class="border-secondary my-3">
             <div class="text-center">
                 <p class="small text-white-50 mb-0">
-                    <strong class="text-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i> Important Notice:</strong>
-                    NeighborGrid is a grassroots mutual-aid platform and is <strong>not</strong> a substitute for official emergency services (police, fire, ambulance). For immediate life-safety emergencies, please call your local emergency dispatch number (911 / 112 / 999).
+                    <strong class="text-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i> Emergency Services Notice:</strong>
+                    NeighborGrid is a grassroots mutual-aid platform and is <strong>NOT</strong> an emergency replacement. For medical crises, police intervention, fire, or immediate life safety, dial <strong>112 (National Emergency Number)</strong> or <strong>100 / 108</strong> immediately.
                 </p>
             </div>
         </div>
@@ -140,6 +174,62 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Custom JS -->
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+    <!-- Location Permission Trigger Script -->
+    {% if session.get("user_id") and not session.get("has_location") %}
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const locModalEl = document.getElementById('locationPromptModal');
+            if (locModalEl) {
+                const modal = new bootstrap.Modal(locModalEl);
+                modal.show();
+
+                const grantBtn = document.getElementById('grantLocationBtn');
+                grantBtn.addEventListener('click', () => {
+                    if (navigator.geolocation) {
+                        grantBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Detecting your locality...';
+                        grantBtn.disabled = true;
+
+                        navigator.geolocation.getCurrentPosition(
+                            async (pos) => {
+                                const lat = pos.coords.latitude;
+                                const lng = pos.coords.longitude;
+
+                                try {
+                                    const resp = await fetch('/api/user/location', {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                            'X-CSRFToken': '{{ session.get("csrf_token") }}'
+                                        },
+                                        body: JSON.stringify({ latitude: lat, longitude: lng })
+                                    });
+                                    if (resp.ok) {
+                                        modal.hide();
+                                        window.location.reload();
+                                    } else {
+                                        modal.hide();
+                                    }
+                                } catch (e) {
+                                    modal.hide();
+                                }
+                            },
+                            (err) => {
+                                alert("Could not fetch location (" + err.message + "). You can still enter your landmark manually!");
+                                modal.hide();
+                            },
+                            { enableHighAccuracy: true, timeout: 8000 }
+                        );
+                    } else {
+                        alert("Geolocation is not supported by your browser.");
+                        modal.hide();
+                    }
+                });
+            }
+        });
+    </script>
+    {% endif %}
+
     {% block scripts %}{% endblock %}
 </body>
 </html>

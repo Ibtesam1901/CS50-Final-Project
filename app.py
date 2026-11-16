@@ -31,7 +31,11 @@ def ensure_csrf_token():
 
 
 def verify_csrf():
-    token = request.form.get("csrf_token") or request.headers.get("X-CSRFToken")
+    token = (
+        request.form.get("csrf_token") 
+        or request.headers.get("X-CSRFToken") 
+        or (request.is_json and request.get_json(silent=True) and request.get_json(silent=True).get("csrf_token"))
+    )
     if not token or token != session.get("csrf_token"):
         return False
     return True
@@ -39,9 +43,11 @@ def verify_csrf():
 
 @app.route("/")
 def index():
-    """Display neighborhood feed with urgency prioritization, impact counter, and map view toggle"""
+    """Display neighborhood feed with urgency prioritization, impact counter, and live map view toggle"""
     user_id = session.get("user_id")
-    current_neighborhood = session.get("neighborhood", "Downtown") if user_id else "Downtown"
+    current_neighborhood = session.get("neighborhood", "Indiranagar, Bengaluru") if user_id else "Indiranagar, Bengaluru"
+    user_lat = session.get("user_lat", 12.9784)
+    user_lng = session.get("user_lng", 77.6408)
 
     # Count completed mutual aid acts in this neighborhood for the impact counter
     impact_rows = db.execute(
@@ -75,14 +81,40 @@ def index():
         posts=posts,
         categories=categories,
         impact_count=impact_count,
-        current_neighborhood=current_neighborhood
+        current_neighborhood=current_neighborhood,
+        user_lat=user_lat,
+        user_lng=user_lng
     )
+
+
+@app.route("/api/user/location", methods=["POST"])
+@login_required
+def update_user_location():
+    """Update current user's live detected latitude & longitude"""
+    if not verify_csrf():
+        return jsonify({"error": "Invalid CSRF token"}), 400
+
+    data = request.get_json() or {}
+    try:
+        lat = float(data.get("latitude"))
+        lng = float(data.get("longitude"))
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid coordinates"}), 400
+
+    user_id = session["user_id"]
+    db.execute("UPDATE users SET latitude = ?, longitude = ? WHERE id = ?", lat, lng, user_id)
+
+    session["user_lat"] = lat
+    session["user_lng"] = lng
+    session["has_location"] = True
+
+    return jsonify({"status": "success", "latitude": lat, "longitude": lng})
 
 
 @app.route("/api/posts")
 def api_posts():
-    """JSON feed endpoint with search, filter parameters, and map geo-points"""
-    current_neighborhood = session.get("neighborhood", "Downtown")
+    """JSON feed endpoint with search, filter parameters, and nearby pins"""
+    current_neighborhood = session.get("neighborhood", "Indiranagar, Bengaluru")
     query = request.args.get("q", "").strip()
     post_type = request.args.get("type", "all")
     category_id = request.args.get("category", "all")
@@ -163,10 +195,11 @@ def register():
         session["user_id"] = user_id
         session["username"] = username
         session["neighborhood"] = neighborhood
+        session["has_location"] = False
         session["is_admin"] = 0
         session["csrf_token"] = secrets.token_hex(16)
 
-        flash(f"Welcome to NeighborGrid, {username}!", "success")
+        flash(f"Swagat hai! Welcome to NeighborGrid, {username}!", "success")
         return redirect("/")
 
     return render_template("register.html")
@@ -198,7 +231,14 @@ def login():
         session["is_admin"] = user["is_admin"]
         session["csrf_token"] = secrets.token_hex(16)
 
-        flash(f"Welcome back, {user['username']}!", "success")
+        if user.get("latitude") and user.get("longitude"):
+            session["user_lat"] = user["latitude"]
+            session["user_lng"] = user["longitude"]
+            session["has_location"] = True
+        else:
+            session["has_location"] = False
+
+        flash(f"Welcome back, {user['username']}! Namaste.", "success")
         return redirect("/")
 
     return render_template("login.html")
@@ -236,7 +276,6 @@ def new_post():
         lng_raw = request.form.get("longitude", "").strip()
         expires_at = request.form.get("expires_at") or None
 
-        # Validation
         if post_type not in ["request", "offer"]:
             return apology("Invalid post type", 400)
 
@@ -259,6 +298,11 @@ def new_post():
         except ValueError:
             pass
 
+        # Fallback to user's saved location if not manually entered
+        if latitude is None and session.get("user_lat"):
+            latitude = session.get("user_lat")
+            longitude = session.get("user_lng")
+
         user_neighborhood = session.get("neighborhood")
         post_id = db.execute(
             """INSERT INTO posts (user_id, post_type, category_id, title, description, urgency, neighborhood, location_details, latitude, longitude, expires_at)
@@ -266,7 +310,7 @@ def new_post():
             session["user_id"], post_type, category_id, title, description, urgency, user_neighborhood, location_details, latitude, longitude, expires_at
         )
 
-        flash("Your post is now live in your neighborhood feed!", "success")
+        flash("Your post is now live in your mohalla feed!", "success")
         return redirect(f"/post/{post_id}")
 
     categories = db.execute("SELECT * FROM categories ORDER BY id ASC")
@@ -397,7 +441,6 @@ def send_message(post_id):
     accepted_match = acc_rows[0]
     user_id = session["user_id"]
 
-    # Only post owner or accepted responder can participate
     if user_id == post["user_id"]:
         receiver_id = accepted_match["responder_id"]
     elif user_id == accepted_match["responder_id"]:
@@ -418,7 +461,7 @@ def send_message(post_id):
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return jsonify({"status": "ok", "sender": session["username"], "content": content})
 
-    flash("Message sent!", "success")
+    flash("Message sent to your neighbor!", "success")
     return redirect(f"/post/{post_id}#chatSection")
 
 
@@ -463,7 +506,7 @@ def rate_match(post_id):
                VALUES (?, ?, ?, ?, ?)""",
             post_id, user_id, recipient_id, score, feedback
         )
-        flash("Thank you for your rating! Your review is now published.", "success")
+        flash("Dhanyavaad! Your review and star rating has been published.", "success")
     except Exception:
         flash("You have already submitted a rating for this collaboration.", "info")
 
@@ -525,7 +568,7 @@ def accept_match(match_id):
     db.execute("UPDATE matches SET status = 'declined' WHERE post_id = ? AND id != ?", post_id, match_id)
     db.execute("UPDATE posts SET status = 'in_progress' WHERE id = ?", post_id)
 
-    flash("Neighbor response accepted! Contact details and direct messaging are now unlocked below.", "success")
+    flash("Neighbor response accepted! Contact details and direct chat are now unlocked below.", "success")
     return redirect(f"/post/{post_id}")
 
 
@@ -568,7 +611,7 @@ def complete_post(post_id):
         "UPDATE posts SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?",
         post_id
     )
-    flash("Great job! Collaboration completed. You can now leave a rating and review below.", "success")
+    flash("Bahut badhiya! Mutual aid completed. Please leave a rating and review below.", "success")
     return redirect(f"/post/{post_id}")
 
 
@@ -676,7 +719,6 @@ def dashboard():
         user_id
     )
 
-    # Reviews received by current user
     received_ratings = db.execute(
         """SELECT r.*, u.username AS rater_username, p.title AS post_title
            FROM ratings r
@@ -705,7 +747,6 @@ def profile(username):
 
     profile_user = users[0]
 
-    # Count completed posts where user was creator or accepted responder
     helped_rows = db.execute(
         """SELECT COUNT(DISTINCT p.id) AS count
            FROM posts p
@@ -715,7 +756,6 @@ def profile(username):
     )
     helped_count = helped_rows[0]["count"] if helped_rows else 0
 
-    # Calculate average star rating and review list
     rating_stats = db.execute(
         """SELECT AVG(score) AS avg_score, COUNT(id) AS review_count
            FROM ratings

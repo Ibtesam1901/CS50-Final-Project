@@ -1,4 +1,4 @@
--- Schema for NeighborGrid (CS50x Final Project)
+-- Schema for NeighborGrid (CS50x Final Project - Indian Locality Edition)
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS users (
     pincode TEXT,
     phone TEXT,
     bio TEXT,
+    latitude REAL,
+    longitude REAL,
     is_admin INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -73,7 +75,7 @@ CREATE TABLE IF NOT EXISTS reports (
     FOREIGN KEY(reporter_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Ratings / Reviews table (Post-completion feedback)
+-- Ratings / Reviews table
 CREATE TABLE IF NOT EXISTS ratings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     post_id INTEGER NOT NULL,
@@ -88,7 +90,7 @@ CREATE TABLE IF NOT EXISTS ratings (
     FOREIGN KEY(recipient_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Direct Messages table (Private thread for accepted match)
+-- Direct Messages table
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     post_id INTEGER NOT NULL,
@@ -102,13 +104,13 @@ CREATE TABLE IF NOT EXISTS messages (
     FOREIGN KEY(receiver_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Seed Categories
+-- Seed Indian Categories
 INSERT OR IGNORE INTO categories (name, description, icon) VALUES
-('Tools & Equipment', 'Borrow or lend household, gardening, or repair tools.', 'fa-wrench'),
-('Skills & Teaching', 'Share knowledge, tutoring, crafts, or digital help.', 'fa-graduation-cap'),
-('Rides & Errands', 'Carpooling, grocery pickups, and local errands.', 'fa-car'),
-('Pet Care', 'Dog walking, pet sitting, and lost/found pets.', 'fa-paw'),
-('Household Help', 'Moving assistance, quick repairs, yard cleanup.', 'fa-hands-helping'),
-('Emergency Aid', 'Immediate non-medical neighborhood assistance.', 'fa-heartbeat'),
-('Books & Media', 'Lend books, board games, and study materials.', 'fa-book-open'),
-('Garden & Food Sharing', 'Surplus garden produce, plants, seeds, and compost.', 'fa-seedling');
+('Tools & Ghar Ka Samaan', 'Borrow or lend drills, ladders, spanners, repair kits.', 'fa-wrench'),
+('Tuition & Skill Sharing', 'Coding, maths, music, yoga, spoken English, cooking.', 'fa-graduation-cap'),
+('Rides & Local Errands', 'Carpooling to metro/station, sabzi mandi, medicine pickup.', 'fa-motorcycle'),
+('Pet Care & Feeding', 'Dog walking, feeding community indies, pet sitting.', 'fa-paw'),
+('Household & Shifting Help', 'Help moving furniture, shifting flats, quick plumbing/electrical fixes.', 'fa-hands-helping'),
+('Emergency Aid & Blood Request', 'Urgent medical assistance, O+/A+ blood donors, disaster relief.', 'fa-heartbeat'),
+('Books & UPSC / Exam Prep', 'Share competitive exam guides, textbooks, novels, board games.', 'fa-book-open'),
+('Garden, Plants & Food Sharing', 'Terrace garden cuttings, tulsi/curry leaves, surplus festive sweets/mithai.', 'fa-seedling');
