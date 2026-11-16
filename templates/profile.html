@@ -24,13 +24,21 @@
                             {% if profile_user.pincode %} ({{ profile_user.pincode }}){% endif %}
                             &middot; <i class="fa-regular fa-calendar-check me-1"></i> Member since {{ profile_user.created_at[:10] }}
                         </p>
+                        {% if avg_score %}
+                        <div class="mb-2">
+                            <span class="badge bg-warning text-dark px-2 py-1 fs-6">
+                                <i class="fa-solid fa-star me-1"></i> {{ avg_score }} / 5.0
+                            </span>
+                            <small class="text-muted ms-1">({{ review_count }} community review{{ 's' if review_count != 1 else '' }})</small>
+                        </div>
+                        {% endif %}
                         {% if profile_user.bio %}
                         <p class="mb-0 text-secondary fst-italic">"{{ profile_user.bio }}"</p>
                         {% endif %}
                     </div>
                 </div>
 
-                <!-- Neighbors Helped Counter / Reputation -->
+                <!-- Stats counters -->
                 <div class="row g-3 my-3 text-center">
                     <div class="col-sm-6">
                         <div class="p-3 bg-light rounded-3 border">
@@ -46,8 +54,38 @@
                     </div>
                 </div>
 
+                <!-- Community Reviews / Ratings -->
+                <div class="mt-4 pt-2">
+                    <h5 class="fw-bold mb-3">
+                        <i class="fa-solid fa-comments text-primary me-2"></i> Neighbor Reviews ({{ reviews|length }})
+                    </h5>
+                    {% if reviews %}
+                    <div class="list-group list-group-flush border rounded-3 mb-4">
+                        {% for r in reviews %}
+                        <div class="list-group-item p-3">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <div>
+                                    <a href="/profile/{{ r.rater_username }}" class="fw-bold text-dark text-decoration-none">
+                                        {{ r.rater_username }}
+                                    </a>
+                                    <small class="text-muted ms-2">&middot; on "{{ r.post_title }}"</small>
+                                </div>
+                                <span class="text-warning small">
+                                    {% for i in range(r.score) %}<i class="fa-solid fa-star"></i>{% endfor %}
+                                </span>
+                            </div>
+                            <p class="small text-secondary mb-0">"{{ r.feedback }}"</p>
+                            <span class="text-muted" style="font-size: 11px;">{{ r.created_at[:10] }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted small mb-4">No reviews yet for this neighbor.</p>
+                    {% endif %}
+                </div>
+
                 <!-- Active Posts by User -->
-                <h5 class="fw-bold mt-4 mb-3">
+                <h5 class="fw-bold mb-3">
                     <i class="fa-solid fa-bullhorn text-primary me-2"></i> Active Posts by {{ profile_user.username }}
                 </h5>
                 {% if active_posts %}
@@ -58,7 +96,10 @@
                             <span class="badge {{ 'badge-request' if p.post_type == 'request' else 'badge-offer' }} text-uppercase">
                                 {{ p.post_type }}
                             </span>
-                            <span class="badge bg-light text-muted border">{{ p.category }}</span>
+                            <span class="badge bg-light text-muted border">
+                                <i class="fa-solid {{ p.category_icon if p.category_icon else 'fa-tag' }} me-1"></i>
+                                {{ p.category }}
+                            </span>
                         </div>
                         <h6 class="fw-bold mb-1 text-dark">{{ p.title }}</h6>
                         <small class="text-muted">{{ p.created_at[:10] }} &middot; {{ p.neighborhood }}</small>

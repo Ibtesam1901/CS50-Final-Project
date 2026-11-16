@@ -82,10 +82,37 @@
                             <label for="description" class="form-label fw-semibold mb-0">Detailed Description <span class="text-danger">*</span></label>
                             <small class="text-muted" id="charCounter">0 / 1000 characters</small>
                         </div>
-                        <textarea class="form-control" id="description" name="description" rows="5" maxlength="1000" placeholder="Provide details: what exactly do you need, when, approximate location in {{ session.get('neighborhood') }}, and any timing details..." required></textarea>
+                        <textarea class="form-control" id="description" name="description" rows="4" maxlength="1000" placeholder="Provide details: what exactly do you need, when, approximate location in {{ session.get('neighborhood') }}, and any timing details..." required></textarea>
                     </div>
 
-                    <!-- Expiry Date -->
+                    <!-- Location / Landmark & Map Coordinates -->
+                    <div class="card bg-light border p-3 mb-3">
+                        <h6 class="fw-bold mb-2">
+                            <i class="fa-solid fa-location-dot text-danger me-1"></i> Approximate Location / Map Pin (Optional)
+                        </h6>
+                        <div class="row g-2 mb-2">
+                            <div class="col-md-6">
+                                <label for="location_details" class="form-label small fw-semibold">Cross Streets / Area Landmark</label>
+                                <input class="form-control form-control-sm" id="location_details" name="location_details" placeholder="e.g. Near 5th Ave & Pine St Park">
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <label for="latitude" class="form-label small fw-semibold">Latitude</label>
+                                <input class="form-control form-control-sm" id="latitude" name="latitude" type="number" step="any" placeholder="e.g. 40.7128">
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <label for="longitude" class="form-label small fw-semibold">Longitude</label>
+                                <input class="form-control form-control-sm" id="longitude" name="longitude" type="number" step="any" placeholder="e.g. -74.0060">
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="small text-muted">Never share your exact apartment or private door code publicly.</span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="detectLocationBtn">
+                                <i class="fa-solid fa-crosshairs me-1"></i> Use My Current Location
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Expiry Date & Neighborhood -->
                     <div class="row g-3 mb-4">
                         <div class="col-md-6">
                             <label for="expires_at" class="form-label fw-semibold">Optional Expiry Date</label>
@@ -140,6 +167,28 @@
     if (catSelect && urgencySelect && emWarning) {
         catSelect.addEventListener('change', checkEmergencyNotice);
         urgencySelect.addEventListener('change', checkEmergencyNotice);
+    }
+
+    // Geolocation helper
+    const detectBtn = document.getElementById('detectLocationBtn');
+    if (detectBtn) {
+        detectBtn.addEventListener('click', () => {
+            if (navigator.geolocation) {
+                detectBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Locating...';
+                navigator.geolocation.getCurrentPosition(
+                    pos => {
+                        document.getElementById('latitude').value = pos.coords.latitude.toFixed(6);
+                        document.getElementById('longitude').value = pos.coords.longitude.toFixed(6);
+                        detectBtn.innerHTML = '<i class="fa-solid fa-check me-1"></i> Coordinates Set';
+                        detectBtn.classList.replace('btn-outline-secondary', 'btn-outline-success');
+                    },
+                    err => {
+                        alert('Could not retrieve location. You may enter cross streets or coordinates manually.');
+                        detectBtn.innerHTML = '<i class="fa-solid fa-crosshairs me-1"></i> Use My Current Location';
+                    }
+                );
+            }
+        });
     }
 </script>
 {% endblock %}

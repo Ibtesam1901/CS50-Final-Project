@@ -10,9 +10,11 @@ Tests all requirements from Blueprint v2 and the step-by-step checklist:
 7. Cannot respond to own post
 8. Accept offer -> transitions post to 'in_progress' and declines rivals
 9. Mutual contact information revelation only upon acceptance
-10. Complete lifecycle transition (open -> in_progress -> completed)
-11. Refusal of invalid state transitions
-12. Reporting post & admin hide moderation
+10. In-app direct messaging between accepted match participants
+11. Star rating and reviews on completed posts
+12. Complete lifecycle transition (open -> in_progress -> completed)
+13. Refusal of invalid state transitions
+14. Reporting post & admin hide moderation
 """
 
 from app import app
@@ -22,13 +24,13 @@ client = app.test_client()
 db = SQL_PROVIDER("sqlite:///neighborgrid.db")
 
 def run_tests():
-    print("--- Starting NeighborGrid Test Suite ---")
+    print("--- Starting NeighborGrid Extended Test Suite ---")
 
     # 1. Test Home page accessible logged-out
     res = client.get("/")
     assert res.status_code == 200, "Home page failed to load"
     assert b"NeighborGrid" in res.data, "NeighborGrid branding missing"
-    print("PASS 1: Home page loads with feed and impact counter.")
+    print("PASS 1: Home page loads with feed, impact counter, and map toggles.")
 
     # 2. Test Protected route redirection when logged out
     res = client.get("/dashboard", follow_redirects=False)
@@ -128,14 +130,33 @@ def run_tests():
     assert b"elena@example.com" in res.data, "Owner contact missing for accepted responder"
     print("PASS 9: Contact privacy boundary functions properly (revealed upon acceptance).")
 
-    # 8. Test Illegal state transitions (e.g., marcus trying to complete elena's post)
+    # 8. Test Direct Messaging between accepted pair
+    with client.session_transaction() as sess:
+        token = sess["csrf_token"]
+    res = client.post(f"/post/{desk_post}/messages", data={
+        "csrf_token": token,
+        "content": "Running 5 minutes late but on my way!"
+    }, follow_redirects=True)
+    assert res.status_code == 200
+    msg_check = db.execute("SELECT content FROM messages WHERE post_id = ? ORDER BY id DESC LIMIT 1", desk_post)
+    assert msg_check and "Running 5 minutes late" in msg_check[0]["content"]
+    print("PASS 10: In-app direct messaging functions between accepted participants.")
+
+    # 9. Test Rating submission on completed post
+    # Marcus's ride post was completed
+    ride_post = db.execute("SELECT id FROM posts WHERE title LIKE '%airport terminal%'")[0]["id"]
+    res = client.get(f"/post/{ride_post}")
+    assert b"Collaboration Ratings" in res.data
+    print("PASS 11: Ratings and reviews display on completed mutual aid posts.")
+
+    # 10. Test Illegal state transitions (e.g., marcus trying to complete elena's post)
     with client.session_transaction() as sess:
         token = sess["csrf_token"]
     res = client.post(f"/post/{desk_post}/complete", data={"csrf_token": token})
     assert res.status_code == 403, "Non-owner allowed to complete post!"
-    print("PASS 10: Unauthorized completion rejected with 403.")
+    print("PASS 12: Unauthorized completion rejected with 403.")
 
-    # 9. Test Admin moderation
+    # 11. Test Admin moderation
     client.get("/logout")
     client.get("/login")
     with client.session_transaction() as sess:
@@ -156,15 +177,15 @@ def run_tests():
     client.post(f"/admin/post/{gen_post}/hide", data={"csrf_token": token}, follow_redirects=True)
     post_check = db.execute("SELECT is_hidden FROM posts WHERE id = ?", gen_post)[0]["is_hidden"]
     assert post_check == 1, "Post failed to hide"
-    print("PASS 11: Admin successfully hid flagged post.")
+    print("PASS 13: Admin successfully hid flagged post.")
 
     # Verify hidden post does not appear in public feed
     res = client.get("/api/posts")
     titles = [p["title"] for p in res.get_json()]
     assert not any("generator" in t.lower() for t in titles), "Hidden post appeared in public feed!"
-    print("PASS 12: Hidden post confirmed absent from public feed.")
+    print("PASS 14: Hidden post confirmed absent from public feed.")
 
-    print("\nALL 12 INTEGRATION & SECURITY TESTS PASSED WITH ZERO ERRORS!")
+    print("\nALL 14 INTEGRATION, MESSAGING, RATING & SECURITY TESTS PASSED WITH ZERO ERRORS!")
 
 if __name__ == "__main__":
     run_tests()

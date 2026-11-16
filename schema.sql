@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS categories (
     icon TEXT
 );
 
--- Posts table (Requests and Offers)
+-- Posts table (Requests and Offers with optional coordinates)
 CREATE TABLE IF NOT EXISTS posts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS posts (
     description TEXT NOT NULL,
     urgency TEXT NOT NULL DEFAULT 'standard' CHECK(urgency IN ('standard', 'urgent')),
     neighborhood TEXT NOT NULL,
+    location_details TEXT,
+    latitude REAL,
+    longitude REAL,
     status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'in_progress', 'completed', 'cancelled')),
     is_hidden INTEGER NOT NULL DEFAULT 0,
     expires_at TIMESTAMP,
@@ -70,6 +73,35 @@ CREATE TABLE IF NOT EXISTS reports (
     FOREIGN KEY(reporter_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Ratings / Reviews table (Post-completion feedback)
+CREATE TABLE IF NOT EXISTS ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER NOT NULL,
+    rater_id INTEGER NOT NULL,
+    recipient_id INTEGER NOT NULL,
+    score INTEGER NOT NULL CHECK(score BETWEEN 1 AND 5),
+    feedback TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(post_id, rater_id),
+    FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE,
+    FOREIGN KEY(rater_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY(recipient_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Direct Messages table (Private thread for accepted match)
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER NOT NULL,
+    sender_id INTEGER NOT NULL,
+    receiver_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE,
+    FOREIGN KEY(sender_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY(receiver_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- Seed Categories
 INSERT OR IGNORE INTO categories (name, description, icon) VALUES
 ('Tools & Equipment', 'Borrow or lend household, gardening, or repair tools.', 'fa-wrench'),
@@ -77,4 +109,6 @@ INSERT OR IGNORE INTO categories (name, description, icon) VALUES
 ('Rides & Errands', 'Carpooling, grocery pickups, and local errands.', 'fa-car'),
 ('Pet Care', 'Dog walking, pet sitting, and lost/found pets.', 'fa-paw'),
 ('Household Help', 'Moving assistance, quick repairs, yard cleanup.', 'fa-hands-helping'),
-('Emergency Aid', 'Immediate non-medical neighborhood assistance.', 'fa-heartbeat');
+('Emergency Aid', 'Immediate non-medical neighborhood assistance.', 'fa-heartbeat'),
+('Books & Media', 'Lend books, board games, and study materials.', 'fa-book-open'),
+('Garden & Food Sharing', 'Surplus garden produce, plants, seeds, and compost.', 'fa-seedling');

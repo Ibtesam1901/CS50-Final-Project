@@ -19,21 +19,22 @@ NeighborGrid guides neighbors through a safe, transparent, and structured cooper
 1. **User Registration & Neighborhood Pinning:**
    Neighbors register with a unique username, email, password (hashed using Werkzeug security standards), bio, and their specific residential neighborhood or locality. All feed discovery is strictly scoped to the user's registered neighborhood, preventing irrelevant posts from distant cities.
 
-2. **Categorized Mutual-Aid Posts:**
-   Neighbors can publish requests or offers across six clear community categories: *Tools & Equipment*, *Skills & Teaching*, *Rides & Errands*, *Pet Care*, *Household Help*, and *Emergency Aid*. Each post features an urgency flag (`standard` vs `urgent`) and an optional automatic expiration date.
+2. **Categorized Mutual-Aid Posts with Interactive Maps:**
+   Neighbors can publish requests or offers across eight community categories: *Tools & Equipment*, *Skills & Teaching*, *Rides & Errands*, *Pet Care*, *Household Help*, *Emergency Aid*, *Books & Media*, and *Garden & Food Sharing*. Each post features an urgency flag (`standard` vs `urgent`), an optional automatic expiration date, cross-street landmarks, and optional map coordinates with automatic browser geolocation.
 
-3. **Urgency-Prioritized Activity Feed:**
-   The homepage dynamically presents active, non-expired posts in the user's neighborhood. Urgent items are styled with high-visibility badges and prioritized at the top of the feed, followed by the newest posts. An automated neighborhood **Impact Counter** showcases the real-time total of completed acts of neighborly aid.
+3. **Urgency-Prioritized Activity Feed & Interactive Leaflet.js Map:**
+   The homepage dynamically presents active, non-expired posts in the user's neighborhood. Urgent items are styled with high-visibility badges and prioritized at the top of the feed. An automated neighborhood **Impact Counter** showcases the real-time total of completed acts of neighborly aid. A built-in view switcher allows neighbors to toggle between a card grid and an interactive OpenStreetMap view powered by Leaflet.js.
 
 4. **Structured Cooperation Lifecycle (The Heart of NeighborGrid):**
    - **Offer Help:** Neighbors browse their local feed and send structured responses with personalized notes.
    - **Review & Match:** The post owner reviews incoming offers on the post detail page or their centralized Dashboard.
-   - **Acceptance & Automatic Rival Declining:** When the owner clicks *Accept*, the post transitions from `open` to `in_progress`. Any competing pending offers on that specific post are automatically declined to prevent confusion.
+   - **Acceptance & Automatic Rival Declining:** When the owner clicks *Accept*, the post transitions from `open` to `in_progress`. Any competing pending offers on that specific post are automatically declined to prevent double-booking.
    - **Privacy Boundary Breach (Contact Reveal):** Only upon acceptance are private contact channels (email, phone number) unlocked and revealed between the matched neighbors.
-   - **Completion & Reputation:** Once the favor or tool exchange is done, the owner marks the post `completed`. This increments both the neighborhood impact counter and the neighbor's public "Acts of Aid Completed" reputation metric.
+   - **In-App Direct Messaging Thread:** An integrated private chat box unlocks immediately between the post owner and the accepted helper, allowing real-time coordination without leaving the application.
+   - **Completion & Reputation Ratings:** Once the aid is complete, the owner marks the post `completed`. Both participants can then submit a 1-to-5 star rating and written review, updating public neighbor reputation scores.
 
 5. **Live Search & Dynamic Filter:**
-   A debounced JavaScript client filter enables residents to instantly search requests by keywords, toggle between Requests and Offers, and filter by category without page refreshes.
+   A debounced JavaScript client filter enables residents to instantly search requests by keywords or landmarks, toggle between Requests and Offers, and filter by category without page refreshes.
 
 6. **Safety, Guidelines & Admin Moderation:**
    NeighborGrid features comprehensive safety guidelines, explicit disclaimers clarifying that the application is not an emergency dispatch service (911/112), and an integrated reporting mechanism. System administrators have access to a dedicated moderation dashboard (`/admin/reports`) where reported posts can be audited and hidden from public feeds with one click.
@@ -43,14 +44,14 @@ NeighborGrid guides neighbors through a safe, transparent, and structured cooper
 ### 3. File-by-File Explanation
 
 - **`app.py`:**
-  The central Flask controller handling all routing, authentication, authorization checks, session handling, CSRF token validation, and database operations. It implements the entire lifecycle: registration, login/logout, feed queries, post creation/editing, neighbor response submission, match acceptance/declining, task completion, cancelation, profile display, reporting, and admin moderation.
+  The central Flask controller handling all routing, authentication, authorization checks, session handling, CSRF token validation, and database operations. It implements the entire lifecycle: registration, login/logout, feed queries, post creation/editing, neighbor response submission, match acceptance/declining, in-app direct messaging, star rating submission, task completion, cancelation, profile display, reporting, and admin moderation.
 
 - **`db_helper.py`:**
-  A robust database interface provider. It is built to seamlessly support CS50's `cs50.SQL` library (`sqlite:///neighborgrid.db`) while including a self-contained fallback using Python's native `sqlite3` module with dictionary cursor row-factories and foreign key enforcement (`PRAGMA foreign_keys = ON;`). This ensures zero dependency hurdles across local Windows setups, Linux environments, and CS50 Codespaces.
+  A robust database interface provider. It seamlessly supports CS50's `cs50.SQL` library (`sqlite:///neighborgrid.db`) while including a self-contained fallback using Python's native `sqlite3` module with dictionary cursor row-factories and foreign key enforcement (`PRAGMA foreign_keys = ON;`). This ensures zero dependency hurdles across local Windows setups, Linux environments, and CS50 Codespaces.
 
 - **`helpers.py`:**
   Contains core view decorators and utility functions:
-  - `login_required`: Restricts protected routes (such as post creation, responding, and dashboard access) to authenticated users, redirecting guests to the login screen.
+  - `login_required`: Restricts protected routes to authenticated users, redirecting guests to the login screen.
   - `admin_required`: Restricts moderation routes (`/admin/reports`, hiding/unhiding posts) exclusively to users possessing `is_admin = 1`.
   - `apology`: Renders custom error and notification templates with standard HTTP status codes (400, 403, 404).
 
@@ -58,19 +59,21 @@ NeighborGrid guides neighbors through a safe, transparent, and structured cooper
   Contains the relational database architecture:
   - `users`: Stores user credentials, hashed passwords, neighborhoods, optional phone numbers, bios, and administrator flags.
   - `categories`: Standardizes aid categories with descriptive icons.
-  - `posts`: Maintains mutual aid requests and offers, urgency states, neighborhood indexing, expiration dates, and statuses (`open`, `in_progress`, `completed`, `cancelled`).
+  - `posts`: Maintains mutual aid requests and offers, location details, latitude, longitude, urgency states, neighborhood indexing, expiration dates, and statuses (`open`, `in_progress`, `completed`, `cancelled`).
   - `matches`: Tracks responses, messages, unique constraints per (post, responder), and match states (`pending`, `accepted`, `declined`).
   - `reports`: Stores safety complaints submitted by residents.
+  - `ratings`: Stores 1-5 star ratings and reviews between mutual-aid partners upon task completion.
+  - `messages`: Stores in-app direct messaging chat entries between the post creator and the accepted helper.
   - `idx_posts_feed`: Composite database index accelerating neighborhood feed querying.
 
 - **`seed.py`:**
-  A database utility that seeds realistic test accounts across two distinct neighborhoods (`Downtown` and `Oakridge`), populating realistic posts across every category and stage of the lifecycle. It establishes an admin account and creates sample reports for immediate moderation testing.
+  A database utility that seeds realistic test accounts across two distinct neighborhoods (`Downtown` and `Oakridge`), populating realistic posts across every category, map coordinates, active direct chats, completed reviews, and sample moderation reports.
 
 - **`test_suite.py`:**
-  An automated end-to-end integration and security test suite testing 12 distinct system requirements: password validations, duplicate constraints, session isolation, neighborhood boundary isolation, self-response barriers, contact privacy unveiling, illegal state transition prevention, and admin moderation hiding.
+  An automated end-to-end integration and security test suite testing 14 distinct system requirements: password validations, duplicate constraints, session isolation, neighborhood boundary isolation, self-response barriers, contact privacy unveiling, in-app messaging, post ratings, illegal state transition prevention, and admin moderation hiding.
 
 - **`static/css/styles.css`:**
-  Custom styling augmenting Bootstrap 5. Provides custom color palettes (deep blues, gold accents), responsive card grids, hover elevations, urgent alert pulsing animations, and clean status badges.
+  Custom styling augmenting Bootstrap 5. Provides custom color palettes (deep blues, gold accents), responsive card grids, hover elevations, urgent alert pulsing animations, lifecycle stepper progress bars, and clean status badges.
 
 - **`static/js/main.js`:**
   Client-side interactivity script powering real-time debounced search and category/type filtering over the feed without page reloads.
@@ -79,19 +82,19 @@ NeighborGrid guides neighbors through a safe, transparent, and structured cooper
   The primary Jinja2 template establishing the global navigation bar, user session badge, dynamic flash message toasts, CSRF-protected logout triggers, and the emergency service disclaimer footer.
 
 - **`templates/index.html`:**
-  The neighborhood feed view containing the hero banner, real-time community impact counter, filter toolbars, and post grid cards.
+  The neighborhood feed view containing the hero banner, real-time community impact counter, filter toolbars, Leaflet.js interactive map view, and post grid cards.
 
 - **`templates/post_detail.html`:**
-  The detailed view of an individual post. Conditionally displays post owner controls, offer response submission forms, pending neighbor responses, unlocked contact details for accepted pairs, and the moderation report modal.
+  The detailed view of an individual post. Conditionally displays post owner controls, lifecycle stepper, offer response submission forms, pending neighbor responses, unlocked contact details, in-app direct chat thread, star reviews, and the moderation report modal.
 
 - **`templates/dashboard.html`:**
-  A three-way user command center dividing activity into: *Incoming Responses to My Posts* (with direct Accept/Decline controls), *My Active Posts*, and *Offers/Responses I Sent*.
+  A user command center dividing activity into: *Incoming Responses to My Posts* (with direct Accept/Decline controls), *My Active Posts*, *Offers/Responses I Sent*, and *Received Community Reviews*.
 
 - **`templates/profile.html`:**
-  Public neighborhood user profile displaying member join date, neighborhood, bio, active posts, and the community impact score ("Acts of Aid Completed").
+  Public neighborhood user profile displaying member join date, neighborhood, bio, star rating average, community reviews, active posts, and the community impact score ("Acts of Aid Completed").
 
 - **`templates/new_post.html` & `templates/edit_post.html`:**
-  Accessible forms with live character counters, post type selectors, category dropdowns, urgency flags, and dynamic emergency advisories.
+  Accessible forms with live character counters, post type selectors, category dropdowns, urgency flags, location/coordinates input with browser geolocation detection, and dynamic emergency advisories.
 
 - **`templates/admin_reports.html`:**
   Administrative moderation queue listing flagged items, reporter rationales, and controls to hide or unhide offending posts.
@@ -109,76 +112,38 @@ NeighborGrid guides neighbors through a safe, transparent, and structured cooper
 
 ### 4. Key Design Decisions
 
-1. **Neighborhood Scoping Over Live GPS Geolocation:**
-   Rather than demanding constant background browser geolocation or external third-party mapping API keys, NeighborGrid utilizes named neighborhoods and localities. This guarantees user privacy, prevents tracking, and accurately mirrors how real communities identify themselves (e.g., "Downtown", "West End", "Oakridge").
-
-2. **Respond-Then-Accept Lifecycle vs. Instant Claiming:**
-   On commercial gig apps, jobs are often grabbed instantly by whoever clicks first. In a mutual aid context, comfort and mutual consent are paramount. A neighbor submits an offer to help with a friendly message; the post owner reviews who responded and explicitly chooses whom to coordinate with.
-
-3. **Two-Tier Contact Information Concealment:**
-   To protect neighbors from unsolicited outreach, spam, or harassment, phone numbers and personal emails are never visible publicly on posts. They remain strictly concealed until an offer is accepted by the post creator.
-
-4. **Composite State Transition Controls:**
-   Posts strictly transition through valid state paths: `open` -> `in_progress` -> `completed` (or `cancelled`). Once an offer is accepted, alternative pending offers are cleanly transitioned to `declined`, eliminating ambiguous double-commitments.
-
-5. **Server-Side CSRF & Ownership Enforcement:**
-   Every mutating state action (`POST`) validates both a unique per-session cryptographic CSRF token and verifies database ownership (`post["user_id"] == session["user_id"]`) on the backend, ensuring client-side manipulation cannot compromise data integrity.
+1. **Integrated In-App Messaging vs External Apps:**
+   Rather than forcing neighbors immediately to third-party SMS or messaging apps, an in-app private coordination chat unlocks on the post itself once a match is accepted.
+2. **Post-Completion Ratings and Reputation:**
+   Trust is essential in mutual aid. Allowing participants to leave 1-to-5 star ratings and reviews gives neighbors confidence when lending equipment or offering assistance.
+3. **Optional Approximate Map Geolocation:**
+   Neighbors can specify landmarks and optional coordinates (or auto-detect via browser geolocation) without exposing private apartment numbers, rendering helpful spatial pins on the Leaflet.js map.
+4. **Respond-Then-Accept Lifecycle:**
+   Unlike instant-claim gig boards, mutual aid requires comfort and mutual consent. Neighbors offer assistance; post owners review notes and choose whom to coordinate with.
+5. **Two-Tier Contact Information Concealment:**
+   Phone numbers and personal emails are never visible publicly on posts. They remain strictly concealed until an offer is accepted by the post creator.
 
 ---
 
-### 5. Challenges & Lessons Learned
+### 5. How to Run the Application
 
-- **Database Foreign Key Integrity on Windows:**
-  By default, SQLite does not enforce foreign key constraints unless explicitly activated per connection via `PRAGMA foreign_keys = ON;`. During initial schema testing, invalid user IDs were initially accepted until custom connection initialization was implemented in `db_helper.py`.
-- **Handling Multi-Rival Acceptance in SQL:**
-  When a user accepts one neighbor's offer from multiple candidates, standard updates required either multiple queries or an atomic transaction. We implemented a clean two-step transition: setting the chosen match to `accepted`, while setting all other matches matching `WHERE post_id = ? AND id != ?` to `declined`.
-- **Real-time Filtering without HTML Injection:**
-  Implementing client-side search risked XSS if user text was injected using `.innerHTML`. The client script was engineered to use DOM data attributes (`data-title`, `data-type`, `data-category-id`) and toggle CSS display properties directly, keeping the application safe from script injection.
-
----
-
-### 6. How to Run the Application
-
-1. **Clone the repository:**
-   ```bash
-   git clone <REPO_URL>
-   cd CS50-Final-Project
-   ```
-
-2. **Install dependencies:**
+1. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Initialize and seed the database:**
+2. **Initialize and seed the database:**
    ```bash
    python seed.py
    ```
-   *(This populates demo accounts: `elena_gardener`, `marcus_tech`, `sarah_baker`, and `admin`, all using the password `password123`)*
 
-4. **Execute the automated test suite:**
+3. **Execute the automated test suite:**
    ```bash
    python test_suite.py
    ```
 
-5. **Start the Flask server:**
+4. **Start the Flask server:**
    ```bash
    flask run
    ```
    Open your browser to `http://127.0.0.1:5000` to interact with NeighborGrid.
-
----
-
-### 7. Limitations & Future Roadmap
-
-While NeighborGrid delivers a complete, robust Good-to-Better tier system, future extensions could incorporate:
-- In-app direct messaging threads between accepted neighbors.
-- Tool return schedule reminders and overdue loan badges.
-- Leaflet.js interactive boundary mapping for visual locality boundaries.
-- Push notifications via web-push protocols when neighbors submit offers.
-
----
-
-### 8. Academic Honesty & AI Disclosure
-
-This project was built with the assistance of Anthropic / Google AI agentic tools for scaffolding code templates, designing test fixtures, and verifying edge-case constraint enforcement in SQLite. All design architecture, database schema constraints, security validations, and code paths were thoroughly reviewed, tested, and understood in compliance with CS50's academic honesty policy.

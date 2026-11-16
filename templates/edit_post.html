@@ -47,7 +47,28 @@
                             <label for="description" class="form-label fw-semibold mb-0">Description <span class="text-danger">*</span></label>
                             <small class="text-muted" id="charCounter">{{ post.description|length }} / 1000 characters</small>
                         </div>
-                        <textarea class="form-control" id="description" name="description" rows="5" maxlength="1000" required>{{ post.description }}</textarea>
+                        <textarea class="form-control" id="description" name="description" rows="4" maxlength="1000" required>{{ post.description }}</textarea>
+                    </div>
+
+                    <!-- Location & Map coordinates -->
+                    <div class="card bg-light border p-3 mb-3">
+                        <h6 class="fw-bold mb-2">
+                            <i class="fa-solid fa-location-dot text-danger me-1"></i> Approximate Location / Map Pin
+                        </h6>
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <label for="location_details" class="form-label small fw-semibold">Cross Streets / Area</label>
+                                <input class="form-control form-control-sm" id="location_details" name="location_details" value="{{ post.location_details or '' }}">
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <label for="latitude" class="form-label small fw-semibold">Latitude</label>
+                                <input class="form-control form-control-sm" id="latitude" name="latitude" type="number" step="any" value="{{ post.latitude or '' }}">
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <label for="longitude" class="form-label small fw-semibold">Longitude</label>
+                                <input class="form-control form-control-sm" id="longitude" name="longitude" type="number" step="any" value="{{ post.longitude or '' }}">
+                            </div>
+                        </div>
                     </div>
 
                     <div class="row g-3 mb-4">
