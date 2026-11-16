@@ -1,26 +1,28 @@
 {% extends "layout.html" %}
 
-{% block title %}Mohalla Activity Feed &amp; Live Map{% endblock %}
+{% block title %}Live Neighborhood Feed &amp; Real-Time Map{% endblock %}
 
 {% block main %}
 <!-- Impact Counter & Header Hero -->
 <div class="hero-section rounded-4 p-4 p-md-5 mb-4 text-white shadow position-relative overflow-hidden">
     <div class="row align-items-center">
         <div class="col-lg-8">
-            <span class="badge bg-warning text-dark px-3 py-2 rounded-pill fw-bold mb-2 shadow-sm">
-                <i class="fa-solid fa-location-dot me-1 text-danger"></i> 
-                {{ session.get("neighborhood") if session.get("user_id") else "Indiranagar, Bengaluru &middot; Local Community" }}
+            <span class="badge bg-warning text-dark px-3 py-2 rounded-pill fw-bold mb-2 shadow-sm" id="localityBadge">
+                <i class="fa-solid fa-location-crosshairs me-1 text-danger"></i> 
+                <span id="localityDisplay">
+                    {{ user_loc_name if user_loc_name else "Detecting your real-time surroundings..." }}
+                </span>
             </span>
             <h1 class="display-5 fw-bold mb-2">
-                NeighborGrid <span class="fw-light fs-3">| Mohalla Aid</span>
+                NeighborGrid <span class="fw-light fs-3">| Live Aid</span>
             </h1>
             <p class="lead mb-3 text-white-50">
-                Lend tools, share rides to the metro, find blood donors, or teach a skill. Pure, safe, non-commercial neighbor-to-neighbor assistance.
+                Real-time, walking-distance mutual aid. Borrow ladders and toolkits, carpool, share books, or offer neighborly help.
             </p>
             <div class="d-flex flex-wrap gap-2">
                 {% if not session.get("user_id") %}
                 <a href="/register" class="btn btn-warning fw-semibold px-4 py-2 text-dark shadow-sm">
-                    <i class="fa-solid fa-user-plus me-1"></i> Join Your Mohalla
+                    <i class="fa-solid fa-user-plus me-1"></i> Join Your Neighborhood
                 </a>
                 <a href="/login" class="btn btn-outline-light px-4 py-2">
                     <i class="fa-solid fa-right-to-bracket me-1"></i> Log In
@@ -30,7 +32,7 @@
                     <i class="fa-solid fa-circle-plus me-1"></i> Post a Request or Offer
                 </a>
                 <button type="button" class="btn btn-outline-light px-3 py-2" id="recenterLocBtn">
-                    <i class="fa-solid fa-crosshairs me-1 text-warning"></i> Refresh My Location
+                    <i class="fa-solid fa-location-crosshairs me-1 text-warning"></i> Pin My Exact GPS Location
                 </button>
                 {% endif %}
             </div>
@@ -38,9 +40,9 @@
         <div class="col-lg-4 mt-4 mt-lg-0 text-center">
             <div class="stat-card bg-white text-dark rounded-4 p-4 shadow">
                 <div class="display-4 fw-bold text-success mb-0" id="impactCount">{{ impact_count }}</div>
-                <div class="text-muted fw-bold small text-uppercase tracking-wide">Neighbors Helped in Locality</div>
+                <div class="text-muted fw-bold small text-uppercase tracking-wide">Acts of Mutual Aid Completed</div>
                 <div class="mt-2 text-success small fw-semibold">
-                    <i class="fa-solid fa-hands-holding-circle me-1"></i> Successful acts of community mutual aid!
+                    <i class="fa-solid fa-hands-holding-circle me-1"></i> Community solidarity in action!
                 </div>
             </div>
         </div>
@@ -54,12 +56,12 @@
             <div class="col-lg-4 col-md-5">
                 <div class="input-group">
                     <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
-                    <input type="text" id="searchInput" class="form-control bg-light border-start-0" placeholder="Search requests, tools, metro, or landmark...">
+                    <input type="text" id="searchInput" class="form-control bg-light border-start-0" placeholder="Search requests, tools, or street name...">
                 </div>
             </div>
             <div class="col-md-3 col-sm-6">
                 <select id="typeFilter" class="form-select">
-                    <option value="all">All Types (Maangna &amp; Dena)</option>
+                    <option value="all">All Types (Requests &amp; Offers)</option>
                     <option value="request">Requests Only (Need Help / Borrow)</option>
                     <option value="offer">Offers Only (Willing to Help / Lend)</option>
                 </select>
@@ -86,18 +88,25 @@
     </div>
 </div>
 
-<!-- Map View Container (Live Indian OpenStreetMap) -->
+<!-- Map View Container (Live Real-Time OpenStreetMap) -->
 <div id="mapSection" class="card shadow-sm border-0 mb-4 d-none">
-    <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+    <div class="card-header bg-white py-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
         <div>
             <h5 class="fw-bold mb-0">
-                <i class="fa-solid fa-map-pin text-danger me-2"></i> Nearby Locality Map (Walking Distance)
+                <i class="fa-solid fa-map-pin text-danger me-2"></i> Real-Time Proximity Map
             </h5>
-            <small class="text-muted"><i class="fa-solid fa-street-view text-primary me-1"></i> Blue marker is your live location. Green = Offers, Red = Requests.</small>
+            <small class="text-muted">
+                <i class="fa-solid fa-circle-dot text-primary me-1"></i> Blue beacon is your live GPS location. Red = Requests, Green = Offers.
+            </small>
         </div>
-        <button class="btn btn-sm btn-outline-secondary" id="fitAllPinsBtn">
-            <i class="fa-solid fa-expand me-1"></i> View All Pins
-        </button>
+        <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-primary" id="recenterMapToUserBtn">
+                <i class="fa-solid fa-location-arrow me-1"></i> Center on Me
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="fitAllPinsBtn">
+                <i class="fa-solid fa-expand me-1"></i> Show All Nearby Pins
+            </button>
+        </div>
     </div>
     <div class="card-body p-0">
         <div id="neighborhoodMap" style="height: 520px; width: 100%; border-radius: 0 0 12px 12px;"></div>
@@ -109,7 +118,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="fw-bold mb-0">
             <i class="fa-solid fa-rss text-success me-2"></i> 
-            Active Posts in <span class="text-success">{{ current_neighborhood }}</span>
+            Nearby Community Posts
         </h4>
         <span class="badge bg-light text-muted border px-3 py-2 small" id="feedCount">
             Showing {{ posts|length }} post{{ 's' if posts|length != 1 else '' }}
@@ -141,7 +150,7 @@
                         {% if post.urgency == 'urgent' %}
                         <div class="mb-2">
                             <span class="badge bg-danger small animate-pulse">
-                                <i class="fa-solid fa-triangle-exclamation me-1"></i> URGENT / ZAROORI
+                                <i class="fa-solid fa-triangle-exclamation me-1"></i> URGENT
                             </span>
                         </div>
                         {% endif %}
@@ -156,11 +165,23 @@
                             {{ post.description }}
                         </p>
 
-                        {% if post.location_details %}
-                        <div class="small text-muted mb-2">
-                            <i class="fa-solid fa-location-dot text-danger me-1"></i> {{ post.location_details }}
+                        <!-- Distance & Proximity Badge -->
+                        <div class="d-flex justify-content-between align-items-center small text-muted mb-2">
+                            <div>
+                                {% if post.distance_km is not none %}
+                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                    <i class="fa-solid fa-person-walking me-1"></i> {{ post.distance_km }} km away
+                                </span>
+                                {% else %}
+                                <span><i class="fa-solid fa-location-dot text-danger me-1"></i> {{ post.neighborhood }}</span>
+                                {% endif %}
+                            </div>
+                            {% if post.location_details %}
+                            <span class="text-truncate" style="max-width: 140px;" title="{{ post.location_details }}">
+                                {{ post.location_details }}
+                            </span>
+                            {% endif %}
                         </div>
-                        {% endif %}
 
                         <div class="border-top pt-3 mt-2 d-flex justify-content-between align-items-center text-muted small">
                             <span><i class="fa-solid fa-user me-1 text-success"></i> {{ post.username }}</span>
@@ -174,7 +195,7 @@
             <div class="col-12" id="emptyState">
                 <div class="text-center py-5 bg-light rounded-4 border">
                     <i class="fa-solid fa-house-chimney-crack text-muted display-4 mb-3"></i>
-                    <h5 class="fw-bold">No active posts right now in {{ current_neighborhood }}</h5>
+                    <h5 class="fw-bold">No active posts right now in your area</h5>
                     <p class="text-muted small mb-3">Be the first neighbor to post a request or offer to kickstart community activity!</p>
                     {% if session.get("user_id") %}
                     <a href="/post/new" class="btn btn-success btn-sm px-3">
@@ -197,47 +218,68 @@
     let markersLayer = null;
     let userMarker = null;
 
-    const initialUserLat = {{ user_lat|tojson }};
-    const initialUserLng = {{ user_lng|tojson }};
+    let currentLat = {{ user_lat|tojson if user_lat else 'null' }};
+    let currentLng = {{ user_lng|tojson if user_lng else 'null' }};
+
+    // Fallback coordinates if user denies or location is pending
+    const defaultLat = 28.6139; // Central Delhi default fallback
+    const defaultLng = 77.2090;
 
     function initMap() {
         if (map) return;
         
-        // Center on user's confirmed locality
-        map = L.map('neighborhoodMap').setView([initialUserLat, initialUserLng], 14);
+        const centerLat = currentLat || defaultLat;
+        const centerLng = currentLng || defaultLng;
+
+        map = L.map('neighborhoodMap').setView([centerLat, centerLng], currentLat ? 14 : 11);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '&copy; OpenStreetMap contributors | NeighborGrid'
         }).addTo(map);
 
-        // Marker for user's own current position
+        markersLayer = L.layerGroup().addTo(map);
+
+        if (currentLat && currentLng) {
+            placeUserBeacon(currentLat, currentLng);
+        }
+
+        loadMapPins();
+    }
+
+    function placeUserBeacon(lat, lng) {
+        if (userMarker) {
+            map.removeLayer(userMarker);
+        }
         const userIcon = L.divIcon({
-            html: '<div style="background-color: #2563eb; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 8px rgba(0,0,0,0.4);"></div>',
+            html: '<div style="background-color: #2563eb; width: 18px; height: 18px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 12px rgba(37,99,235,0.8); animation: pulse 2s infinite;"></div>',
             className: 'user-live-pin',
-            iconSize: [16, 16],
-            iconAnchor: [8, 8]
+            iconSize: [18, 18],
+            iconAnchor: [9, 9]
         });
-        userMarker = L.marker([initialUserLat, initialUserLng], { icon: userIcon })
+        userMarker = L.marker([lat, lng], { icon: userIcon })
             .addTo(map)
             .bindPopup("<strong>Aapki Location (You Are Here)</strong>");
-
-        markersLayer = L.layerGroup().addTo(map);
-        loadMapPins();
     }
 
     async function loadMapPins() {
         try {
-            const res = await fetch('/api/posts');
+            const url = currentLat && currentLng 
+                ? `/api/posts?lat=${currentLat}&lng=${currentLng}` 
+                : '/api/posts';
+            const res = await fetch(url);
             const posts = await res.json();
             markersLayer.clearLayers();
 
-            const bounds = [[initialUserLat, initialUserLng]];
+            const bounds = [];
+            if (currentLat && currentLng) {
+                bounds.push([currentLat, currentLng]);
+            }
 
             posts.forEach(p => {
                 if (p.latitude && p.longitude) {
                     const markerColor = p.post_type === 'request' ? '#dc2626' : '#15803d';
                     const marker = L.circleMarker([p.latitude, p.longitude], {
-                        radius: p.urgency === 'urgent' ? 11 : 8,
+                        radius: p.urgency === 'urgent' ? 12 : 9,
                         fillColor: markerColor,
                         color: '#ffffff',
                         weight: 2,
@@ -245,19 +287,26 @@
                         fillOpacity: 0.9
                     });
 
+                    const distanceBadge = p.distance_km !== null 
+                        ? `<div class="badge bg-success-subtle text-success border border-success-subtle mb-1"><i class="fa-solid fa-person-walking me-1"></i>${p.distance_km} km away</div>` 
+                        : '';
+
                     const popupContent = `
-                        <div style="min-width: 200px;">
-                            <span class="badge ${p.post_type === 'request' ? 'badge-request' : 'badge-offer'} text-uppercase" style="font-size: 10px;">
-                                ${p.post_type}
-                            </span>
-                            <span class="badge bg-secondary" style="font-size: 10px;">${p.category}</span>
-                            ${p.urgency === 'urgent' ? '<span class="badge bg-danger" style="font-size: 10px;">URGENT</span>' : ''}
-                            <h6 style="margin-top: 6px; margin-bottom: 4px; font-weight: bold; color: #1e293b;">${p.title}</h6>
+                        <div style="min-width: 210px;">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="badge ${p.post_type === 'request' ? 'badge-request' : 'badge-offer'} text-uppercase" style="font-size: 10px;">
+                                    ${p.post_type}
+                                </span>
+                                <span class="badge bg-secondary" style="font-size: 10px;">${p.category}</span>
+                            </div>
+                            ${p.urgency === 'urgent' ? '<span class="badge bg-danger mb-1" style="font-size: 10px;">URGENT</span>' : ''}
+                            <h6 style="margin-top: 4px; margin-bottom: 4px; font-weight: bold; color: #1e293b;">${p.title}</h6>
+                            ${distanceBadge}
                             <p style="font-size: 12px; color: #475569; margin-bottom: 4px;">
-                                <i class="fa-solid fa-location-dot text-danger"></i> ${p.location_details || ''}
+                                <i class="fa-solid fa-location-dot text-danger"></i> ${p.location_details || p.neighborhood}
                             </p>
                             <div class="small text-muted mb-2">Posted by ${p.username}</div>
-                            <a href="/post/${p.id}" class="btn btn-sm btn-success text-white py-1 w-100" style="font-size: 12px;">View &amp; Offer Help</a>
+                            <a href="/post/${p.id}" class="btn btn-sm btn-success text-white py-1 w-100 fw-semibold" style="font-size: 12px;">View &amp; Offer Help</a>
                         </div>
                     `;
                     marker.bindPopup(popupContent);
@@ -272,6 +321,14 @@
                     if (bounds.length > 1) {
                         map.fitBounds(bounds, { padding: [50, 50] });
                     }
+                };
+            }
+
+            const centerBtn = document.getElementById('recenterMapToUserBtn');
+            if (centerBtn && currentLat && currentLng) {
+                centerBtn.onclick = () => {
+                    map.setView([currentLat, currentLng], 15);
+                    if (userMarker) userMarker.openPopup();
                 };
             }
         } catch (err) {
@@ -303,31 +360,82 @@
         });
     }
 
-    if (recenterBtn) {
-        recenterBtn.addEventListener('click', () => {
-            if (navigator.geolocation) {
-                recenterBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Detecting...';
-                navigator.geolocation.getCurrentPosition(
-                    async (pos) => {
-                        const lat = pos.coords.latitude;
-                        const lng = pos.coords.longitude;
-                        await fetch('/api/user/location', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRFToken': '{{ session.get("csrf_token") }}'
-                            },
-                            body: JSON.stringify({ latitude: lat, longitude: lng })
-                        });
-                        window.location.reload();
-                    },
-                    (err) => {
-                        alert('Could not update live coordinates: ' + err.message);
-                        recenterBtn.innerHTML = '<i class="fa-solid fa-crosshairs me-1 text-warning"></i> Refresh My Location';
+    // Live Geolocation with OpenStreetMap Reverse Geocoding
+    async function acquireLiveLocation(buttonEl = null) {
+        if (!navigator.geolocation) {
+            alert('Geolocation is not supported by your browser.');
+            return;
+        }
+
+        if (buttonEl) {
+            buttonEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Pinpointing location...';
+            buttonEl.disabled = true;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            async (pos) => {
+                currentLat = pos.coords.latitude;
+                currentLng = pos.coords.longitude;
+
+                let localityName = "Your Current Location";
+                try {
+                    // Reverse geocoding via OpenStreetMap Nominatim API
+                    const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLat}&lon=${currentLng}`);
+                    if (geoRes.ok) {
+                        const geoData = await geoRes.json();
+                        const addr = geoData.address || {};
+                        localityName = addr.suburb || addr.neighbourhood || addr.residential || addr.city || addr.state_district || addr.county || "Your Neighborhood";
+                        if (addr.city && localityName !== addr.city) {
+                            localityName += `, ${addr.city}`;
+                        }
                     }
-                );
-            }
-        });
+                } catch (e) {
+                    console.warn("Reverse geocode fallback", e);
+                }
+
+                // Update server session and DB
+                await fetch('/api/user/location', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ session.get("csrf_token") }}'
+                    },
+                    body: JSON.stringify({ 
+                        latitude: currentLat, 
+                        longitude: currentLng,
+                        locality_name: localityName
+                    })
+                });
+
+                // Update UI badge
+                const locDisp = document.getElementById('localityDisplay');
+                if (locDisp) locDisp.textContent = localityName;
+
+                if (map) {
+                    placeUserBeacon(currentLat, currentLng);
+                    map.setView([currentLat, currentLng], 15);
+                    loadMapPins();
+                } else {
+                    window.location.reload();
+                }
+
+                if (buttonEl) {
+                    buttonEl.innerHTML = '<i class="fa-solid fa-circle-check me-1 text-success"></i> Location Synced';
+                }
+            },
+            (err) => {
+                alert('Could not detect exact location: ' + err.message);
+                if (buttonEl) {
+                    buttonEl.innerHTML = '<i class="fa-solid fa-location-crosshairs me-1 text-warning"></i> Pin My Exact GPS Location';
+                    buttonEl.disabled = false;
+                }
+            },
+            { enableHighAccuracy: true, timeout: 10000 }
+        );
+    }
+
+    if (recenterBtn) {
+        recenterBtn.addEventListener('click', () => acquireLiveLocation(recenterBtn));
     }
 </script>
 {% endblock %}

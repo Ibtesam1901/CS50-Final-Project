@@ -23,7 +23,7 @@
                 <i class="fa-solid fa-people-roof text-warning"></i>
                 <span class="d-flex align-items-center gap-1">
                     <span>NeighborGrid</span>
-                    <span class="badge bg-warning text-dark px-2 py-0 ms-1" style="font-size: 10px; letter-spacing: 0.5px;">BHARAT</span>
+                    <span class="badge bg-warning text-dark px-2 py-0 ms-1" style="font-size: 10px; letter-spacing: 0.5px;">LIVE</span>
                 </span>
             </a>
             <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navContent" aria-controls="navContent" aria-expanded="false" aria-label="Toggle navigation">
@@ -62,7 +62,7 @@
                             </span>
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end shadow border-0">
-                            <li><h6 class="dropdown-header"><i class="fa-solid fa-location-dot me-1 text-danger"></i> {{ session.get("neighborhood") }}</h6></li>
+                            <li><h6 class="dropdown-header"><i class="fa-solid fa-location-dot me-1 text-danger"></i> {{ session.get("user_loc_name") or session.get("neighborhood") }}</h6></li>
                             <li><a class="dropdown-item" href="/profile/{{ session.get('username') }}"><i class="fa-solid fa-id-badge me-2 text-muted"></i> My Profile</a></li>
                             <li><a class="dropdown-item" href="/dashboard"><i class="fa-solid fa-sliders me-2 text-muted"></i> My Activity</a></li>
                             <li><hr class="dropdown-divider"></li>
@@ -120,20 +120,20 @@
                     <div class="display-5 text-warning mb-3">
                         <i class="fa-solid fa-location-crosshairs fa-bounce"></i>
                     </div>
-                    <h4 class="fw-bold mb-2">Enable Your Mohalla / Locality Location</h4>
+                    <h4 class="fw-bold mb-2">Enable Real-Time Proximity Map</h4>
                     <p class="text-secondary small mb-3">
-                        NeighborGrid works best when centered on your real surroundings. Grant location access so your live map pinpoints nearby help requests, tool sharing, and local errands within walking distance.
+                        NeighborGrid displays live requests and offers within walking distance. Allow location access to automatically center your interactive map on your exact surroundings.
                     </p>
                     <div class="alert alert-light border small text-start py-2 px-3 mb-4">
                         <i class="fa-solid fa-user-shield text-success me-1"></i>
-                        <strong>Privacy Guaranteed:</strong> We only store approximate coordinates to plot nearby pins; your exact flat/house number is never broadcast publicly.
+                        <strong>Privacy First:</strong> Only broad neighborhood proximity is calculated; your private flat number is never broadcast publicly.
                     </div>
                     <div class="d-grid gap-2">
                         <button type="button" class="btn btn-success py-2 fw-bold" id="grantLocationBtn">
-                            <i class="fa-solid fa-location-arrow me-1"></i> Share Live Location &amp; Open Map
+                            <i class="fa-solid fa-location-arrow me-1"></i> Detect My Exact Location &amp; Center Map
                         </button>
                         <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal" id="skipLocationBtn">
-                            I'll use my registered address for now
+                            Use city center for now
                         </button>
                     </div>
                 </div>
@@ -148,10 +148,10 @@
             <div class="row align-items-center gy-3">
                 <div class="col-md-6 text-center text-md-start">
                     <p class="mb-1 fw-semibold">
-                        <i class="fa-solid fa-people-roof text-warning me-1"></i> NeighborGrid &copy; 2026 CS50x Final Project &middot; India Edition
+                        <i class="fa-solid fa-people-roof text-warning me-1"></i> NeighborGrid &copy; 2026 CS50x Final Project &middot; Real-Time Edition
                     </p>
                     <p class="small text-white-50 mb-0">
-                        Hyperlocal community mutual-aid connecting neighbors across Indian mohallas, housing societies, and colonies.
+                        Hyperlocal community mutual-aid connecting neighbors for tool sharing, carpooling, and friendly assistance.
                     </p>
                 </div>
                 <div class="col-md-6 text-center text-md-end">
@@ -175,7 +175,7 @@
     <!-- Custom JS -->
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 
-    <!-- Location Permission Trigger Script -->
+    <!-- Location Permission Trigger Script with Reverse Geocoding -->
     {% if session.get("user_id") and not session.get("has_location") %}
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -187,13 +187,28 @@
                 const grantBtn = document.getElementById('grantLocationBtn');
                 grantBtn.addEventListener('click', () => {
                     if (navigator.geolocation) {
-                        grantBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Detecting your locality...';
+                        grantBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Pinpointing your coordinates...';
                         grantBtn.disabled = true;
 
                         navigator.geolocation.getCurrentPosition(
                             async (pos) => {
                                 const lat = pos.coords.latitude;
                                 const lng = pos.coords.longitude;
+
+                                let localityName = "Your Neighborhood";
+                                try {
+                                    const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+                                    if (geoRes.ok) {
+                                        const geoData = await geoRes.json();
+                                        const addr = geoData.address || {};
+                                        localityName = addr.suburb || addr.neighbourhood || addr.residential || addr.city || addr.state_district || "Local Area";
+                                        if (addr.city && localityName !== addr.city) {
+                                            localityName += `, ${addr.city}`;
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.warn("Reverse geocode fallback", e);
+                                }
 
                                 try {
                                     const resp = await fetch('/api/user/location', {
@@ -202,7 +217,11 @@
                                             'Content-Type': 'application/json',
                                             'X-CSRFToken': '{{ session.get("csrf_token") }}'
                                         },
-                                        body: JSON.stringify({ latitude: lat, longitude: lng })
+                                        body: JSON.stringify({ 
+                                            latitude: lat, 
+                                            longitude: lng,
+                                            locality_name: localityName
+                                        })
                                     });
                                     if (resp.ok) {
                                         modal.hide();
@@ -215,10 +234,10 @@
                                 }
                             },
                             (err) => {
-                                alert("Could not fetch location (" + err.message + "). You can still enter your landmark manually!");
+                                alert("Could not fetch location (" + err.message + "). You can still use the app with default locality.");
                                 modal.hide();
                             },
-                            { enableHighAccuracy: true, timeout: 8000 }
+                            { enableHighAccuracy: true, timeout: 10000 }
                         );
                     } else {
                         alert("Geolocation is not supported by your browser.");

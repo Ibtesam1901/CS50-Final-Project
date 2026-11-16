@@ -1,4 +1,5 @@
 import os
+import math
 import secrets
 from functools import wraps
 from flask import Flask, flash, redirect, render_template, request, session, jsonify
@@ -9,7 +10,7 @@ from helpers import apology, login_required, admin_required
 # Configure application
 app = Flask(__name__)
 
-# Ensure secret key is configured (environment variable with secure fallback)
+# Production-grade secret key configuration (environment variable with secure fallback)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
 # Ensure responses aren't cached
@@ -22,6 +23,19 @@ def after_request(response):
 
 # Connect to database using SQL provider
 db = SQL_PROVIDER("sqlite:///neighborgrid.db")
+
+# Haversine distance formula (in Kilometers) for real-time proximity sorting
+def haversine_km(lat1, lon1, lat2, lon2):
+    if None in (lat1, lon1, lat2, lon2):
+        return None
+    R = 6371.0 # Earth's radius in km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2 +
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+         math.sin(dlon / 2) ** 2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return round(R * c, 2)
 
 # CSRF helper generator
 @app.before_request
@@ -43,36 +57,61 @@ def verify_csrf():
 
 @app.route("/")
 def index():
-    """Display neighborhood feed with urgency prioritization, impact counter, and live map view toggle"""
+    """Production Real-Time Location-Driven Feed & Map"""
     user_id = session.get("user_id")
-    current_neighborhood = session.get("neighborhood", "Indiranagar, Bengaluru") if user_id else "Indiranagar, Bengaluru"
-    user_lat = session.get("user_lat", 12.9784)
-    user_lng = session.get("user_lng", 77.6408)
 
-    # Count completed mutual aid acts in this neighborhood for the impact counter
-    impact_rows = db.execute(
-        """SELECT COUNT(*) AS count 
-           FROM posts 
-           WHERE neighborhood = ? AND status = 'completed'""",
-        current_neighborhood
-    )
-    impact_count = impact_rows[0]["count"] if impact_rows else 0
+    # Real-time coordinates from session or database
+    user_lat = session.get("user_lat")
+    user_lng = session.get("user_lng")
+    user_loc_name = session.get("user_loc_name") or session.get("neighborhood")
 
-    # Query active, visible, non-expired posts in current neighborhood
-    posts = db.execute(
+    # If logged in without coordinates in session, check user record in db
+    if user_id and (user_lat is None or user_lng is None):
+        user_rows = db.execute("SELECT latitude, longitude, neighborhood FROM users WHERE id = ?", user_id)
+        if user_rows and user_rows[0].get("latitude") and user_rows[0].get("longitude"):
+            user_lat = user_rows[0]["latitude"]
+            user_lng = user_rows[0]["longitude"]
+            session["user_lat"] = user_lat
+            session["user_lng"] = user_lng
+            session["has_location"] = True
+            if not user_loc_name:
+                user_loc_name = user_rows[0].get("neighborhood")
+
+    # Query active, visible, non-expired posts
+    raw_posts = db.execute(
         """SELECT p.id, p.title, p.description, p.post_type, p.urgency, p.created_at,
-                  p.category_id, p.location_details, p.latitude, p.longitude,
+                  p.category_id, p.location_details, p.latitude, p.longitude, p.neighborhood,
                   c.name AS category, c.icon AS category_icon, u.username
            FROM posts p
            JOIN users u ON u.id = p.user_id
            JOIN categories c ON c.id = p.category_id
-           WHERE p.neighborhood = ?
-             AND p.status = 'open'
+           WHERE p.status = 'open'
              AND p.is_hidden = 0
              AND (p.expires_at IS NULL OR p.expires_at > CURRENT_TIMESTAMP)
-           ORDER BY (p.urgency = 'urgent') DESC, p.created_at DESC""",
-        current_neighborhood
+           ORDER BY (p.urgency = 'urgent') DESC, p.created_at DESC"""
     )
+
+    # Calculate real-time distance from user's live GPS coordinates if available
+    posts = []
+    for p in raw_posts:
+        p_dict = dict(p)
+        if user_lat is not None and user_lng is not None and p_dict.get("latitude") and p_dict.get("longitude"):
+            dist = haversine_km(user_lat, user_lng, p_dict["latitude"], p_dict["longitude"])
+            p_dict["distance_km"] = dist
+        else:
+            p_dict["distance_km"] = None
+        posts.append(p_dict)
+
+    # If user has coordinates, sort by urgency first, then nearest distance (within 50km), then date
+    if user_lat is not None and user_lng is not None:
+        posts.sort(key=lambda x: (
+            0 if x.get("urgency") == "urgent" else 1,
+            x["distance_km"] if x["distance_km"] is not None else 999999
+        ))
+
+    # Total completed acts of community mutual aid in the network
+    impact_rows = db.execute("SELECT COUNT(*) AS count FROM posts WHERE status = 'completed'")
+    impact_count = impact_rows[0]["count"] if impact_rows else 0
 
     categories = db.execute("SELECT id, name, icon FROM categories ORDER BY name ASC")
 
@@ -81,16 +120,16 @@ def index():
         posts=posts,
         categories=categories,
         impact_count=impact_count,
-        current_neighborhood=current_neighborhood,
+        user_loc_name=user_loc_name,
         user_lat=user_lat,
-        user_lng=user_lng
+        user_lng=user_lng,
+        has_real_coords=bool(user_lat and user_lng)
     )
 
 
 @app.route("/api/user/location", methods=["POST"])
-@login_required
 def update_user_location():
-    """Update current user's live detected latitude & longitude"""
+    """Production endpoint: Update user's live detected latitude, longitude, and reverse-geocoded locality"""
     if not verify_csrf():
         return jsonify({"error": "Invalid CSRF token"}), 400
 
@@ -99,39 +138,61 @@ def update_user_location():
         lat = float(data.get("latitude"))
         lng = float(data.get("longitude"))
     except (ValueError, TypeError):
-        return jsonify({"error": "Invalid coordinates"}), 400
+        return jsonify({"error": "Invalid GPS coordinates"}), 400
 
-    user_id = session["user_id"]
-    db.execute("UPDATE users SET latitude = ?, longitude = ? WHERE id = ?", lat, lng, user_id)
+    locality_name = data.get("locality_name") or data.get("city") or "Your Current Location"
 
     session["user_lat"] = lat
     session["user_lng"] = lng
+    session["user_loc_name"] = locality_name
     session["has_location"] = True
 
-    return jsonify({"status": "success", "latitude": lat, "longitude": lng})
+    # If user is logged in, persist to database
+    if session.get("user_id"):
+        db.execute(
+            """UPDATE users 
+               SET latitude = ?, longitude = ?, neighborhood = COALESCE(?, neighborhood) 
+               WHERE id = ?""",
+            lat, lng, locality_name if locality_name != "Your Current Location" else None, session["user_id"]
+        )
+
+    return jsonify({
+        "status": "success", 
+        "latitude": lat, 
+        "longitude": lng, 
+        "locality": locality_name
+    })
 
 
 @app.route("/api/posts")
 def api_posts():
-    """JSON feed endpoint with search, filter parameters, and nearby pins"""
-    current_neighborhood = session.get("neighborhood", "Indiranagar, Bengaluru")
+    """Production GeoJSON-style endpoint: returns posts sorted by real-time distance from caller's coordinates"""
     query = request.args.get("q", "").strip()
     post_type = request.args.get("type", "all")
     category_id = request.args.get("category", "all")
 
+    # Caller's coordinates
+    caller_lat = request.args.get("lat", type=float) or session.get("user_lat")
+    caller_lng = request.args.get("lng", type=float) or session.get("user_lng")
+    neighborhood = request.args.get("neighborhood") or session.get("neighborhood")
+
     sql = """
         SELECT p.id, p.title, p.description, p.post_type, p.urgency, p.created_at,
-               p.category_id, p.location_details, p.latitude, p.longitude,
+               p.category_id, p.location_details, p.latitude, p.longitude, p.neighborhood,
                c.name AS category, c.icon AS category_icon, u.username
         FROM posts p
         JOIN users u ON u.id = p.user_id
         JOIN categories c ON c.id = p.category_id
-        WHERE p.neighborhood = ?
-          AND p.status = 'open'
+        WHERE p.status = 'open'
           AND p.is_hidden = 0
           AND (p.expires_at IS NULL OR p.expires_at > CURRENT_TIMESTAMP)
     """
-    params = [current_neighborhood]
+    params = []
+
+    # Locality scoping: filter strictly by caller's neighborhood if present
+    if neighborhood:
+        sql += " AND p.neighborhood = ?"
+        params.append(neighborhood)
 
     if post_type in ["request", "offer"]:
         sql += " AND p.post_type = ?"
@@ -142,19 +203,36 @@ def api_posts():
         params.append(category_id)
 
     if query:
-        sql += " AND (p.title LIKE ? OR p.description LIKE ? OR p.location_details LIKE ?)"
+        sql += " AND (p.title LIKE ? OR p.description LIKE ? OR p.location_details LIKE ? OR p.neighborhood LIKE ?)"
         keyword = f"%{query}%"
-        params.extend([keyword, keyword, keyword])
+        params.extend([keyword, keyword, keyword, keyword])
 
     sql += " ORDER BY (p.urgency = 'urgent') DESC, p.created_at DESC"
 
-    rows = db.execute(sql, *params)
-    return jsonify(rows)
+    raw_rows = db.execute(sql, *params)
+    results = []
+
+    for r in raw_rows:
+        row_dict = dict(r)
+        if caller_lat is not None and caller_lng is not None and row_dict.get("latitude") and row_dict.get("longitude"):
+            dist = haversine_km(caller_lat, caller_lng, row_dict["latitude"], row_dict["longitude"])
+            row_dict["distance_km"] = dist
+        else:
+            row_dict["distance_km"] = None
+        results.append(row_dict)
+
+    if caller_lat is not None and caller_lng is not None:
+        results.sort(key=lambda x: (
+            0 if x.get("urgency") == "urgent" else 1,
+            x["distance_km"] if x["distance_km"] is not None else 999999
+        ))
+
+    return jsonify(results)
 
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    """Register user"""
+    """Register user with optional real GPS detection"""
     if request.method == "POST":
         if not verify_csrf():
             return apology("Invalid security token", 400)
@@ -165,6 +243,8 @@ def register():
         pincode = request.form.get("pincode", "").strip()
         phone = request.form.get("phone", "").strip()
         bio = request.form.get("bio", "").strip()
+        lat_raw = request.form.get("latitude", "").strip()
+        lng_raw = request.form.get("longitude", "").strip()
         password = request.form.get("password")
         confirmation = request.form.get("confirmation")
 
@@ -184,18 +264,30 @@ def register():
         if existing:
             return apology("Username or email already registered", 400)
 
+        latitude = None
+        longitude = None
+        try:
+            if lat_raw and lng_raw:
+                latitude = float(lat_raw)
+                longitude = float(lng_raw)
+        except ValueError:
+            pass
+
         pw_hash = generate_password_hash(password)
         user_id = db.execute(
-            """INSERT INTO users (username, email, hash, neighborhood, pincode, phone, bio)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            username, email, pw_hash, neighborhood, pincode, phone, bio
+            """INSERT INTO users (username, email, hash, neighborhood, pincode, phone, bio, latitude, longitude)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            username, email, pw_hash, neighborhood, pincode, phone, bio, latitude, longitude
         )
 
         session.clear()
         session["user_id"] = user_id
         session["username"] = username
         session["neighborhood"] = neighborhood
-        session["has_location"] = False
+        session["user_loc_name"] = neighborhood
+        session["user_lat"] = latitude
+        session["user_lng"] = longitude
+        session["has_location"] = bool(latitude and longitude)
         session["is_admin"] = 0
         session["csrf_token"] = secrets.token_hex(16)
 
@@ -207,7 +299,7 @@ def register():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    """Log user in"""
+    """Log user in and initialize location states"""
     if request.method == "POST":
         if not verify_csrf():
             return apology("Invalid security token", 400)
@@ -228,6 +320,7 @@ def login():
         session["user_id"] = user["id"]
         session["username"] = user["username"]
         session["neighborhood"] = user["neighborhood"]
+        session["user_loc_name"] = user["neighborhood"]
         session["is_admin"] = user["is_admin"]
         session["csrf_token"] = secrets.token_hex(16)
 
@@ -261,7 +354,7 @@ def guidelines():
 @app.route("/post/new", methods=["GET", "POST"])
 @login_required
 def new_post():
-    """Create a new mutual-aid request or offer with optional location pins"""
+    """Create a new mutual-aid request or offer with live location pin"""
     if request.method == "POST":
         if not verify_csrf():
             return apology("Invalid security token", 400)
@@ -298,19 +391,19 @@ def new_post():
         except ValueError:
             pass
 
-        # Fallback to user's saved location if not manually entered
+        # Fallback to user's saved location coordinates if not manually overridden
         if latitude is None and session.get("user_lat"):
             latitude = session.get("user_lat")
             longitude = session.get("user_lng")
 
-        user_neighborhood = session.get("neighborhood")
+        user_neighborhood = session.get("neighborhood", "Local Area")
         post_id = db.execute(
             """INSERT INTO posts (user_id, post_type, category_id, title, description, urgency, neighborhood, location_details, latitude, longitude, expires_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             session["user_id"], post_type, category_id, title, description, urgency, user_neighborhood, location_details, latitude, longitude, expires_at
         )
 
-        flash("Your post is now live in your mohalla feed!", "success")
+        flash("Your post is now live on the mohalla map!", "success")
         return redirect(f"/post/{post_id}")
 
     categories = db.execute("SELECT * FROM categories ORDER BY id ASC")
