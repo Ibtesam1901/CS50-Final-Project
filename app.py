@@ -4,11 +4,15 @@ import secrets
 from functools import wraps
 from flask import Flask, flash, redirect, render_template, request, session, jsonify
 from werkzeug.security import check_password_hash, generate_password_hash
+from init_db import init_db
 from db_helper import SQL_PROVIDER
 from helpers import apology, login_required, admin_required
 
 # Configure application
 app = Flask(__name__)
+
+# Ensure database and schema are initialized
+init_db()
 
 # Production-grade secret key configuration (environment variable with secure fallback)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))

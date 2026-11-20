@@ -5,7 +5,11 @@ with genuine local mutual-aid requests, offers, live geo-coordinates, in-app Hin
 """
 
 from werkzeug.security import generate_password_hash
+from init_db import init_db
 from db_helper import SQL_PROVIDER
+
+# Ensure database tables exist before opening connection (for clean deployments)
+init_db()
 
 db = SQL_PROVIDER("sqlite:///neighborgrid.db")
 
