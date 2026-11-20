@@ -2,3 +2,5 @@ flask>=3.0.0
 cs50>=9.3.0
 werkzeug>=3.0.0
 gunicorn>=21.2.0
+flask-limiter>=3.5.0
+pytest>=8.0.0

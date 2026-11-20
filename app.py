@@ -2,20 +2,50 @@ import os
 import math
 import secrets
 from functools import wraps
-from flask import Flask, flash, redirect, render_template, request, session, jsonify
+from flask import Flask, flash, redirect, render_template, request, session, jsonify, abort
 from werkzeug.security import check_password_hash, generate_password_hash
 from init_db import init_db
 from db_helper import SQL_PROVIDER
-from helpers import apology, login_required, admin_required
+from helpers import apology, login_required, admin_required, check_commercial_content, is_safe_url, jitter_coordinate
+
+# Initialize rate limiting gracefully
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    HAS_LIMITER = True
+except ImportError:
+    HAS_LIMITER = False
+
+# Ensure database and schema migrations are applied on start
+init_db()
 
 # Configure application
 app = Flask(__name__)
 
-# Ensure database and schema are initialized
-init_db()
-
-# Production-grade secret key configuration (environment variable with secure fallback)
+# Production-grade secret key configuration
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
+
+# Cookie security settings (HttpOnly, SameSite, Secure if production)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+if os.environ.get("FLASK_ENV") == "production" or os.environ.get("RENDER"):
+    app.config["SESSION_COOKIE_SECURE"] = True
+
+# Rate limiting setup
+if HAS_LIMITER:
+    limiter = Limiter(
+        get_remote_address,
+        app=app,
+        default_limits=["300 per hour", "60 per minute"],
+        storage_uri="memory://"
+    )
+else:
+    class DummyLimiter:
+        def limit(self, *args, **kwargs):
+            def decorator(f):
+                return f
+            return decorator
+    limiter = DummyLimiter()
 
 # Ensure responses aren't cached
 @app.after_request
@@ -25,8 +55,11 @@ def after_request(response):
     response.headers["Pragma"] = "no-cache"
     return response
 
-# Connect to database using SQL provider
-db = SQL_PROVIDER("sqlite:///neighborgrid.db")
+# Connect to database (configurable path)
+db_url = os.environ.get("DATABASE_PATH", "neighborgrid.db")
+if not db_url.startswith("sqlite:///"):
+    db_url = f"sqlite:///{db_url}"
+db = SQL_PROVIDER(db_url)
 
 # Haversine distance formula (in Kilometers) for real-time proximity sorting
 def haversine_km(lat1, lon1, lat2, lon2):
@@ -58,10 +91,49 @@ def verify_csrf():
         return False
     return True
 
+# Context processor for global unread notifications count
+@app.context_processor
+def inject_notifications():
+    user_id = session.get("user_id")
+    if not user_id:
+        return {"unread_notifications_count": 0}
+    try:
+        # Pending incoming responses to user's posts
+        inc = db.execute(
+            """SELECT COUNT(m.id) AS count 
+               FROM matches m 
+               JOIN posts p ON p.id = m.post_id 
+               WHERE p.user_id = ? AND m.status = 'pending'""",
+            user_id
+        )
+        # Unread in-app messages received
+        msgs = db.execute(
+            """SELECT COUNT(id) AS count 
+               FROM messages 
+               WHERE receiver_id = ? AND is_read = 0""",
+            user_id
+        )
+        total = (inc[0]["count"] if inc else 0) + (msgs[0]["count"] if msgs else 0)
+        return {"unread_notifications_count": total}
+    except Exception:
+        return {"unread_notifications_count": 0}
 
+
+# ==============================================================================
+# HEALTHCHECK ENDPOINT (FOR UPTIME MONITORS / RENDER KEEP-ALIVE)
+# ==============================================================================
+@app.route("/health")
+def health():
+    """Lightweight 200 OK endpoint for Render uptime pingers to prevent sleep"""
+    return jsonify({"status": "healthy", "service": "NeighborGrid", "uptime": "active"}), 200
+
+
+# ==============================================================================
+# FEED & CORE PAGES
+# ==============================================================================
 @app.route("/")
 def index():
-    """Production Real-Time Location-Driven Feed & Map"""
+    """Production Real-Time Location-Driven Feed & Map with Auto-Expiry Filter"""
     user_id = session.get("user_id")
 
     # Real-time coordinates from session or database
@@ -81,7 +153,7 @@ def index():
             if not user_loc_name:
                 user_loc_name = user_rows[0].get("neighborhood")
 
-    # Query active, visible, non-expired posts
+    # Query active, visible, non-expired posts (Open posts older than 14 days auto-expire from feed)
     raw_posts = db.execute(
         """SELECT p.id, p.title, p.description, p.post_type, p.urgency, p.created_at,
                   p.category_id, p.location_details, p.latitude, p.longitude, p.neighborhood,
@@ -91,14 +163,20 @@ def index():
            JOIN categories c ON c.id = p.category_id
            WHERE p.status = 'open'
              AND p.is_hidden = 0
+             AND p.is_flagged = 0
              AND (p.expires_at IS NULL OR p.expires_at > CURRENT_TIMESTAMP)
+             AND (p.created_at >= datetime('now', '-14 days'))
            ORDER BY (p.urgency = 'urgent') DESC, p.created_at DESC"""
     )
 
-    # Calculate real-time distance from user's live GPS coordinates if available
+    # Calculate real-time distance and jitter coordinates for privacy
     posts = []
     for p in raw_posts:
         p_dict = dict(p)
+        # Jitter coordinates slightly (~100m) so exact home coordinates aren't publicly exposed
+        p_dict["latitude"] = jitter_coordinate(p_dict.get("latitude"))
+        p_dict["longitude"] = jitter_coordinate(p_dict.get("longitude"))
+
         if user_lat is not None and user_lng is not None and p_dict.get("latitude") and p_dict.get("longitude"):
             dist = haversine_km(user_lat, user_lng, p_dict["latitude"], p_dict["longitude"])
             p_dict["distance_km"] = dist
@@ -106,7 +184,7 @@ def index():
             p_dict["distance_km"] = None
         posts.append(p_dict)
 
-    # If user has coordinates, sort by urgency first, then nearest distance (within 50km), then date
+    # Sort by urgency first, then nearest distance if user has coordinates
     if user_lat is not None and user_lng is not None:
         posts.sort(key=lambda x: (
             0 if x.get("urgency") == "urgent" else 1,
@@ -141,6 +219,9 @@ def update_user_location():
     try:
         lat = float(data.get("latitude"))
         lng = float(data.get("longitude"))
+        # Range validation
+        if not (-90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0):
+            return jsonify({"error": "Coordinates out of bounds"}), 400
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid GPS coordinates"}), 400
 
@@ -170,15 +251,20 @@ def update_user_location():
 
 @app.route("/api/posts")
 def api_posts():
-    """Production GeoJSON-style endpoint: returns posts sorted by real-time distance from caller's coordinates"""
+    """
+    Production GeoJSON-style endpoint: returns posts sorted by real-time distance,
+    radius filtering, and multi-parameter query filtering with coordinate privacy jitter.
+    """
     query = request.args.get("q", "").strip()
     post_type = request.args.get("type", "all")
     category_id = request.args.get("category", "all")
+    radius_km = request.args.get("radius", type=float)
+    sort_by = request.args.get("sort", "nearest") # nearest, newest, urgent
 
     # Caller's coordinates
     caller_lat = request.args.get("lat", type=float) or session.get("user_lat")
     caller_lng = request.args.get("lng", type=float) or session.get("user_lng")
-    neighborhood = request.args.get("neighborhood") or session.get("neighborhood")
+    neighborhood = request.args.get("neighborhood")
 
     sql = """
         SELECT p.id, p.title, p.description, p.post_type, p.urgency, p.created_at,
@@ -189,11 +275,12 @@ def api_posts():
         JOIN categories c ON c.id = p.category_id
         WHERE p.status = 'open'
           AND p.is_hidden = 0
+          AND p.is_flagged = 0
           AND (p.expires_at IS NULL OR p.expires_at > CURRENT_TIMESTAMP)
+          AND (p.created_at >= datetime('now', '-14 days'))
     """
     params = []
 
-    # Locality scoping: filter strictly by caller's neighborhood if present
     if neighborhood:
         sql += " AND p.neighborhood = ?"
         params.append(neighborhood)
@@ -211,32 +298,50 @@ def api_posts():
         keyword = f"%{query}%"
         params.extend([keyword, keyword, keyword, keyword])
 
-    sql += " ORDER BY (p.urgency = 'urgent') DESC, p.created_at DESC"
-
     raw_rows = db.execute(sql, *params)
     results = []
 
     for r in raw_rows:
         row_dict = dict(r)
+        # Apply coordinate privacy jitter
+        row_dict["latitude"] = jitter_coordinate(row_dict.get("latitude"))
+        row_dict["longitude"] = jitter_coordinate(row_dict.get("longitude"))
+
         if caller_lat is not None and caller_lng is not None and row_dict.get("latitude") and row_dict.get("longitude"):
             dist = haversine_km(caller_lat, caller_lng, row_dict["latitude"], row_dict["longitude"])
             row_dict["distance_km"] = dist
         else:
             row_dict["distance_km"] = None
+
+        # Filter by radius if requested and distance known
+        if radius_km and row_dict["distance_km"] is not None:
+            if row_dict["distance_km"] > radius_km:
+                continue
+
         results.append(row_dict)
 
-    if caller_lat is not None and caller_lng is not None:
-        results.sort(key=lambda x: (
-            0 if x.get("urgency") == "urgent" else 1,
-            x["distance_km"] if x["distance_km"] is not None else 999999
-        ))
+    # Sorting
+    if sort_by == "newest":
+        results.sort(key=lambda x: x["created_at"], reverse=True)
+    elif sort_by == "urgent":
+        results.sort(key=lambda x: (0 if x.get("urgency") == "urgent" else 1, x["created_at"]), reverse=False)
+    else: # nearest default
+        if caller_lat is not None and caller_lng is not None:
+            results.sort(key=lambda x: (
+                0 if x.get("urgency") == "urgent" else 1,
+                x["distance_km"] if x["distance_km"] is not None else 999999
+            ))
 
     return jsonify(results)
 
 
+# ==============================================================================
+# AUTHENTICATION
+# ==============================================================================
 @app.route("/register", methods=["GET", "POST"])
+@limiter.limit("10 per minute")
 def register():
-    """Register user with optional real GPS detection"""
+    """Register user with input validation and password hashing"""
     if request.method == "POST":
         if not verify_csrf():
             return apology("Invalid security token", 400)
@@ -254,6 +359,9 @@ def register():
 
         if not username or not email or not neighborhood or not password:
             return apology("Must provide username, email, neighborhood, and password", 400)
+
+        if len(username) > 30 or len(email) > 80:
+            return apology("Username or email exceeds maximum length limit", 400)
 
         if len(password) < 8:
             return apology("Password must be at least 8 characters long", 400)
@@ -274,9 +382,12 @@ def register():
             if lat_raw and lng_raw:
                 latitude = float(lat_raw)
                 longitude = float(lng_raw)
+                if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
+                    latitude, longitude = None, None
         except ValueError:
             pass
 
+        # Hash with werkzeug.security (scrypt)
         pw_hash = generate_password_hash(password)
         user_id = db.execute(
             """INSERT INTO users (username, email, hash, neighborhood, pincode, phone, bio, latitude, longitude)
@@ -302,8 +413,13 @@ def register():
 
 
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit("15 per minute")
 def login():
-    """Log user in and initialize location states"""
+    """Log user in with safe redirect to next URL"""
+    next_url = request.args.get("next") or request.form.get("next")
+    if not is_safe_url(next_url):
+        next_url = "/"
+
     if request.method == "POST":
         if not verify_csrf():
             return apology("Invalid security token", 400)
@@ -320,6 +436,9 @@ def login():
             return apology("Invalid username and/or password", 403)
 
         user = rows[0]
+        if user.get("is_banned"):
+            return apology("Your account has been suspended for community guidelines violations.", 403)
+
         session.clear()
         session["user_id"] = user["id"]
         session["username"] = user["username"]
@@ -336,9 +455,9 @@ def login():
             session["has_location"] = False
 
         flash(f"Welcome back, {user['username']}! Namaste.", "success")
-        return redirect("/")
+        return redirect(next_url)
 
-    return render_template("login.html")
+    return render_template("login.html", next=next_url)
 
 
 @app.route("/logout", methods=["POST", "GET"])
@@ -355,10 +474,14 @@ def guidelines():
     return render_template("guidelines.html")
 
 
+# ==============================================================================
+# POSTS & MUTUAL-AID LIFECYCLE
+# ==============================================================================
 @app.route("/post/new", methods=["GET", "POST"])
 @login_required
+@limiter.limit("20 per minute")
 def new_post():
-    """Create a new mutual-aid request or offer with live location pin"""
+    """Create a new mutual-aid request or offer with commercial content enforcement"""
     if request.method == "POST":
         if not verify_csrf():
             return apology("Invalid security token", 400)
@@ -379,8 +502,18 @@ def new_post():
         if not title or len(title) > 120:
             return apology("Title is required and must be under 120 characters", 400)
 
-        if not description:
-            return apology("Description is required", 400)
+        if not description or len(description) > 2000:
+            return apology("Description is required and must be under 2000 characters", 400)
+
+        # ----------------------------------------------------------------------
+        # ENFORCE NO BUYING / SELLING (COMMERCIAL CONTENT FILTER)
+        # ----------------------------------------------------------------------
+        is_comm, match_term = check_commercial_content(title, description, location_details)
+        if is_comm:
+            return apology(
+                f"NeighborGrid is strictly non-commercial. Buying, selling, pricing, or payment language ('{match_term}') is not permitted. Please remove any prices or commercial terms.",
+                400
+            )
 
         cat_rows = db.execute("SELECT id FROM categories WHERE id = ?", category_id)
         if not cat_rows:
@@ -392,15 +525,17 @@ def new_post():
             if lat_raw and lng_raw:
                 latitude = float(lat_raw)
                 longitude = float(lng_raw)
+                if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
+                    latitude, longitude = None, None
         except ValueError:
             pass
 
-        # Fallback to user's saved location coordinates if not manually overridden
+        # Fallback to user's saved location coordinates if not manually entered
         if latitude is None and session.get("user_lat"):
             latitude = session.get("user_lat")
             longitude = session.get("user_lng")
 
-        user_neighborhood = session.get("neighborhood", "Local Area")
+        user_neighborhood = session.get("user_loc_name") or session.get("neighborhood", "Local Area")
         post_id = db.execute(
             """INSERT INTO posts (user_id, post_type, category_id, title, description, urgency, neighborhood, location_details, latitude, longitude, expires_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -416,9 +551,12 @@ def new_post():
 
 @app.route("/post/<int:post_id>")
 def post_detail(post_id):
-    """View post details, direct messages thread, ratings, and responses"""
+    """
+    View post details, small embedded map, poster's reputation badge,
+    direct messages thread, ratings, and contextual CTA.
+    """
     posts = db.execute(
-        """SELECT p.*, c.name AS category, c.icon AS category_icon, u.username, u.email, u.phone
+        """SELECT p.*, c.name AS category, c.icon AS category_icon, u.username, u.email, u.phone, u.created_at AS user_joined
            FROM posts p
            JOIN users u ON u.id = p.user_id
            JOIN categories c ON c.id = p.category_id
@@ -426,14 +564,39 @@ def post_detail(post_id):
         post_id
     )
     if not posts:
-        return apology("Post not found", 404)
+        return render_template("404.html"), 404
 
     post = posts[0]
     user_id = session.get("user_id")
     is_owner = (user_id == post["user_id"])
 
-    if post["is_hidden"] and not is_owner and not session.get("is_admin"):
-        return apology("This post has been hidden by moderators", 404)
+    # If hidden or flagged, only admin or author can view
+    if (post["is_hidden"] or post.get("is_flagged")) and not is_owner and not session.get("is_admin"):
+        return apology("This post has been removed or flagged for review by community moderators", 404)
+
+    # Calculate distance from viewer
+    distance_km = None
+    if session.get("user_lat") and session.get("user_lng") and post.get("latitude") and post.get("longitude"):
+        distance_km = haversine_km(session["user_lat"], session["user_lng"], post["latitude"], post["longitude"])
+
+    # Jitter coordinates for public display
+    post_display_lat = jitter_coordinate(post.get("latitude"))
+    post_display_lng = jitter_coordinate(post.get("longitude"))
+
+    # Fetch poster's reputation stats (completed acts + average rating)
+    poster_stats = db.execute(
+        """SELECT 
+               (SELECT COUNT(DISTINCT p2.id) FROM posts p2 
+                LEFT JOIN matches m2 ON m2.post_id = p2.id AND m2.status = 'accepted'
+                WHERE p2.status = 'completed' AND (p2.user_id = ? OR m2.responder_id = ?)) AS completed_count,
+               (SELECT AVG(r.score) FROM ratings r WHERE r.recipient_id = ?) AS avg_rating,
+               (SELECT COUNT(r.id) FROM ratings r WHERE r.recipient_id = ?) AS rating_count
+        """,
+        post["user_id"], post["user_id"], post["user_id"], post["user_id"]
+    )
+    poster_completed_count = poster_stats[0]["completed_count"] if poster_stats else 0
+    poster_avg_rating = round(poster_stats[0]["avg_rating"], 1) if (poster_stats and poster_stats[0]["avg_rating"]) else None
+    poster_rating_count = poster_stats[0]["rating_count"] if poster_stats else 0
 
     # Owner view of responses
     responses = []
@@ -458,6 +621,7 @@ def post_detail(post_id):
             user_match = match_rows[0]
 
     # Check for accepted match to reveal contact details and in-app chat
+    # STRICT SERVER-SIDE ENFORCEMENT: Contact details are ONLY selected if match is accepted!
     accepted_match = None
     acc_rows = db.execute(
         """SELECT m.*, u.username AS responder_username, u.email AS responder_email, u.phone AS responder_phone
@@ -483,6 +647,9 @@ def post_detail(post_id):
                ORDER BY msg.created_at ASC""",
             post_id
         )
+        # Mark messages to current user as read
+        if user_id:
+            db.execute("UPDATE messages SET is_read = 1 WHERE post_id = ? AND receiver_id = ?", post_id, user_id)
 
     # Fetch ratings / reviews if completed
     ratings = []
@@ -505,6 +672,12 @@ def post_detail(post_id):
         "post_detail.html",
         post=post,
         is_owner=is_owner,
+        distance_km=distance_km,
+        post_display_lat=post_display_lat,
+        post_display_lng=post_display_lng,
+        poster_completed_count=poster_completed_count,
+        poster_avg_rating=poster_avg_rating,
+        poster_rating_count=poster_rating_count,
         responses=responses,
         user_match=user_match,
         accepted_match=accepted_match,
@@ -518,6 +691,7 @@ def post_detail(post_id):
 
 @app.route("/post/<int:post_id>/messages", methods=["POST"])
 @login_required
+@limiter.limit("30 per minute")
 def send_message(post_id):
     """Send in-app direct message between post owner and accepted helper"""
     if not verify_csrf():
@@ -546,8 +720,8 @@ def send_message(post_id):
         return apology("You are not part of this accepted mutual-aid match", 403)
 
     content = request.form.get("content", "").strip()
-    if not content:
-        return apology("Message cannot be blank", 400)
+    if not content or len(content) > 1000:
+        return apology("Message must be between 1 and 1000 characters", 400)
 
     db.execute(
         """INSERT INTO messages (post_id, sender_id, receiver_id, content)
@@ -612,6 +786,7 @@ def rate_match(post_id):
 
 @app.route("/post/<int:post_id>/respond", methods=["POST"])
 @login_required
+@limiter.limit("15 per minute")
 def respond_post(post_id):
     """Respond to a neighbor's post"""
     if not verify_csrf():
@@ -629,6 +804,8 @@ def respond_post(post_id):
         return apology("You cannot respond to your own post", 400)
 
     message = request.form.get("message", "").strip()
+    if len(message) > 500:
+        return apology("Message exceeds 500 characters limit", 400)
 
     try:
         db.execute(
@@ -647,7 +824,7 @@ def respond_post(post_id):
 @app.route("/match/<int:match_id>/accept", methods=["POST"])
 @login_required
 def accept_match(match_id):
-    """Accept a response and unlock direct messaging and contact info"""
+    """Accept a response and unlock direct messaging and contact info (Owner only)"""
     if not verify_csrf():
         return apology("Invalid security token", 400)
 
@@ -658,7 +835,7 @@ def accept_match(match_id):
         match_id
     )
     if not rows or rows[0]["owner"] != session["user_id"] or rows[0]["status"] != "open":
-        return apology("Not allowed", 403)
+        return apology("Unauthorized action on this post", 403)
 
     post_id = rows[0]["post_id"]
     db.execute("UPDATE matches SET status = 'accepted' WHERE id = ?", match_id)
@@ -672,7 +849,7 @@ def accept_match(match_id):
 @app.route("/match/<int:match_id>/decline", methods=["POST"])
 @login_required
 def decline_match(match_id):
-    """Decline a response"""
+    """Decline a response (Owner only)"""
     if not verify_csrf():
         return apology("Invalid security token", 400)
 
@@ -682,7 +859,7 @@ def decline_match(match_id):
            WHERE m.id = ?""", match_id
     )
     if not rows or rows[0]["owner"] != session["user_id"]:
-        return apology("Not allowed", 403)
+        return apology("Unauthorized action", 403)
 
     post_id = rows[0]["post_id"]
     db.execute("UPDATE matches SET status = 'declined' WHERE id = ?", match_id)
@@ -693,13 +870,13 @@ def decline_match(match_id):
 @app.route("/post/<int:post_id>/complete", methods=["POST"])
 @login_required
 def complete_post(post_id):
-    """Mark an in_progress post as completed (poster only)"""
+    """Mark an in_progress post as completed (Owner only)"""
     if not verify_csrf():
         return apology("Invalid security token", 400)
 
     rows = db.execute("SELECT user_id, status FROM posts WHERE id = ?", post_id)
     if not rows or rows[0]["user_id"] != session["user_id"]:
-        return apology("Not allowed", 403)
+        return apology("Unauthorized action: only post creator can mark as completed", 403)
 
     if rows[0]["status"] != "in_progress":
         return apology("Only in-progress posts can be marked as completed", 400)
@@ -715,13 +892,13 @@ def complete_post(post_id):
 @app.route("/post/<int:post_id>/cancel", methods=["POST"])
 @login_required
 def cancel_post(post_id):
-    """Cancel an open or in_progress post (poster only)"""
+    """Cancel an open or in_progress post (Owner only)"""
     if not verify_csrf():
         return apology("Invalid security token", 400)
 
     rows = db.execute("SELECT user_id, status FROM posts WHERE id = ?", post_id)
     if not rows or rows[0]["user_id"] != session["user_id"]:
-        return apology("Not allowed", 403)
+        return apology("Unauthorized action: only post creator can cancel", 403)
 
     if rows[0]["status"] not in ["open", "in_progress"]:
         return apology("Cannot cancel a completed or already cancelled post", 400)
@@ -731,13 +908,48 @@ def cancel_post(post_id):
     return redirect(f"/post/{post_id}")
 
 
+@app.route("/post/<int:post_id>/delete", methods=["POST"])
+@login_required
+def delete_post(post_id):
+    """Delete a post permanently (Owner or Admin only)"""
+    if not verify_csrf():
+        return apology("Invalid security token", 400)
+
+    rows = db.execute("SELECT user_id FROM posts WHERE id = ?", post_id)
+    if not rows:
+        return apology("Post not found", 404)
+
+    if rows[0]["user_id"] != session["user_id"] and not session.get("is_admin"):
+        return apology("Unauthorized action", 403)
+
+    db.execute("DELETE FROM posts WHERE id = ?", post_id)
+    flash("Post has been permanently removed.", "info")
+    return redirect("/dashboard")
+
+
+@app.route("/post/<int:post_id>/repost", methods=["POST"])
+@login_required
+def repost_post(post_id):
+    """Renew/repost an open post that had auto-expired (Owner only)"""
+    if not verify_csrf():
+        return apology("Invalid security token", 400)
+
+    rows = db.execute("SELECT * FROM posts WHERE id = ?", post_id)
+    if not rows or rows[0]["user_id"] != session["user_id"]:
+        return apology("Unauthorized action", 403)
+
+    db.execute("UPDATE posts SET created_at = CURRENT_TIMESTAMP WHERE id = ?", post_id)
+    flash("Post has been renewed and brought back to the top of the mohalla feed!", "success")
+    return redirect(f"/post/{post_id}")
+
+
 @app.route("/post/<int:post_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit_post(post_id):
-    """Edit title, description, category, and location while post is still open"""
+    """Edit title, description, category, and location while post is still open (Owner only)"""
     rows = db.execute("SELECT * FROM posts WHERE id = ?", post_id)
     if not rows or rows[0]["user_id"] != session["user_id"]:
-        return apology("Not allowed", 403)
+        return apology("Unauthorized action: you can only edit your own posts", 403)
 
     post = rows[0]
     if post["status"] != "open":
@@ -757,8 +969,18 @@ def edit_post(post_id):
 
         if not title or len(title) > 120:
             return apology("Title is required and must be under 120 characters", 400)
-        if not description:
-            return apology("Description is required", 400)
+        if not description or len(description) > 2000:
+            return apology("Description is required and must be under 2000 characters", 400)
+
+        # ----------------------------------------------------------------------
+        # ENFORCE NO BUYING / SELLING (COMMERCIAL CONTENT FILTER ON EDIT)
+        # ----------------------------------------------------------------------
+        is_comm, match_term = check_commercial_content(title, description, location_details)
+        if is_comm:
+            return apology(
+                f"NeighborGrid is strictly non-commercial. Buying, selling, pricing, or payment language ('{match_term}') is not permitted. Please remove any prices or commercial terms.",
+                400
+            )
 
         latitude = None
         longitude = None
@@ -766,6 +988,8 @@ def edit_post(post_id):
             if lat_raw and lng_raw:
                 latitude = float(lat_raw)
                 longitude = float(lng_raw)
+                if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
+                    latitude, longitude = None, None
         except ValueError:
             pass
 
@@ -785,11 +1009,16 @@ def edit_post(post_id):
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    """User dashboard: My Posts, Responses Sent, Incoming Responses, and Pending Ratings"""
+    """User dashboard: My Posts, Offers I Made, Responses to My Posts, Completed, Repost options"""
     user_id = session["user_id"]
 
     my_posts = db.execute(
-        """SELECT * FROM posts WHERE user_id = ? ORDER BY created_at DESC""",
+        """SELECT p.*, c.name AS category,
+                  CASE WHEN p.status = 'open' AND (p.created_at < datetime('now', '-14 days')) THEN 1 ELSE 0 END AS is_expired
+           FROM posts p
+           JOIN categories c ON c.id = p.category_id
+           WHERE p.user_id = ? 
+           ORDER BY p.created_at DESC""",
         user_id
     )
 
@@ -837,10 +1066,16 @@ def dashboard():
 
 @app.route("/profile/<username>")
 def profile(username):
-    """Public profile with neighbors-helped counter and average star ratings"""
-    users = db.execute("SELECT id, username, neighborhood, pincode, bio, is_admin, created_at FROM users WHERE username = ?", username)
+    """
+    Public profile with neighbors-helped counter and average star ratings.
+    PRIVACY AUDIT: Strictly excludes phone, email, and exact coordinates.
+    """
+    users = db.execute(
+        "SELECT id, username, neighborhood, bio, is_admin, created_at FROM users WHERE username = ?",
+        username
+    )
     if not users:
-        return apology("User not found", 404)
+        return render_template("404.html"), 404
 
     profile_user = users[0]
 
@@ -876,7 +1111,7 @@ def profile(username):
         """SELECT p.*, c.name AS category, c.icon AS category_icon
            FROM posts p
            JOIN categories c ON c.id = p.category_id
-           WHERE p.user_id = ? AND p.status = 'open' AND p.is_hidden = 0
+           WHERE p.user_id = ? AND p.status = 'open' AND p.is_hidden = 0 AND p.is_flagged = 0
            ORDER BY p.created_at DESC""",
         profile_user["id"]
     )
@@ -892,16 +1127,20 @@ def profile(username):
     )
 
 
+# ==============================================================================
+# MODERATION & REPORTS
+# ==============================================================================
 @app.route("/post/<int:post_id>/report", methods=["POST"])
 @login_required
+@limiter.limit("5 per minute")
 def report_post(post_id):
     """Report a post for moderation review"""
     if not verify_csrf():
         return apology("Invalid security token", 400)
 
     reason = request.form.get("reason", "").strip()
-    if not reason:
-        return apology("A reason is required to report a post", 400)
+    if not reason or len(reason) > 500:
+        return apology("A valid reason under 500 characters is required to report a post", 400)
 
     try:
         db.execute(
@@ -909,7 +1148,9 @@ def report_post(post_id):
                VALUES (?, ?, ?)""",
             post_id, session["user_id"], reason
         )
-        flash("Thank you for reporting. Our moderation team has been alerted.", "info")
+        # Mark post as flagged for moderator review
+        db.execute("UPDATE posts SET is_flagged = 1 WHERE id = ?", post_id)
+        flash("Thank you for reporting. Our Resident Welfare moderation team has been alerted.", "info")
     except Exception:
         flash("You have already reported this post.", "warning")
 
@@ -919,11 +1160,11 @@ def report_post(post_id):
 @app.route("/admin/reports")
 @admin_required
 def admin_reports():
-    """Admin moderation review page"""
+    """Admin moderation review page with dismiss, remove, and ban actions"""
     reports = db.execute(
         """SELECT r.id AS report_id, r.reason, r.created_at,
-                  p.id AS post_id, p.title AS post_title, p.neighborhood, p.is_hidden,
-                  u_author.username AS author_username,
+                  p.id AS post_id, p.title AS post_title, p.neighborhood, p.is_hidden, p.is_flagged,
+                  u_author.id AS author_id, u_author.username AS author_username, u_author.is_banned AS author_is_banned,
                   u_reporter.username AS reporter_username
            FROM reports r
            JOIN posts p ON p.id = r.post_id
@@ -934,15 +1175,31 @@ def admin_reports():
     return render_template("admin_reports.html", reports=reports)
 
 
+@app.route("/admin/report/<int:report_id>/dismiss", methods=["POST"])
+@admin_required
+def admin_dismiss_report(report_id):
+    """Dismiss a report and restore post if flagged"""
+    if not verify_csrf():
+        return apology("Invalid security token", 400)
+
+    report_rows = db.execute("SELECT post_id FROM reports WHERE id = ?", report_id)
+    if report_rows:
+        post_id = report_rows[0]["post_id"]
+        db.execute("UPDATE posts SET is_flagged = 0 WHERE id = ?", post_id)
+        db.execute("DELETE FROM reports WHERE id = ?", report_id)
+        flash("Report dismissed. Post has been cleared.", "success")
+    return redirect("/admin/reports")
+
+
 @app.route("/admin/post/<int:post_id>/hide", methods=["POST"])
 @admin_required
 def admin_hide_post(post_id):
-    """Admin hide a post"""
+    """Admin hide a post from feeds"""
     if not verify_csrf():
         return apology("Invalid security token", 400)
 
     db.execute("UPDATE posts SET is_hidden = 1 WHERE id = ?", post_id)
-    flash(f"Post #{post_id} has been hidden from all neighborhood feeds.", "success")
+    flash(f"Post #{post_id} has been hidden from all mohalla feeds.", "success")
     return redirect("/admin/reports")
 
 
@@ -953,9 +1210,46 @@ def admin_unhide_post(post_id):
     if not verify_csrf():
         return apology("Invalid security token", 400)
 
-    db.execute("UPDATE posts SET is_hidden = 0 WHERE id = ?", post_id)
+    db.execute("UPDATE posts SET is_hidden = 0, is_flagged = 0 WHERE id = ?", post_id)
     flash(f"Post #{post_id} has been restored to visible status.", "success")
     return redirect("/admin/reports")
+
+
+@app.route("/admin/post/<int:post_id>/delete", methods=["POST"])
+@admin_required
+def admin_delete_post(post_id):
+    """Admin delete a post permanently"""
+    if not verify_csrf():
+        return apology("Invalid security token", 400)
+
+    db.execute("DELETE FROM posts WHERE id = ?", post_id)
+    flash(f"Post #{post_id} permanently removed.", "success")
+    return redirect("/admin/reports")
+
+
+@app.route("/admin/user/<int:user_id>/ban", methods=["POST"])
+@admin_required
+def admin_ban_user(user_id):
+    """Admin ban a user for guideline violations"""
+    if not verify_csrf():
+        return apology("Invalid security token", 400)
+
+    db.execute("UPDATE users SET is_banned = 1 WHERE id = ?", user_id)
+    db.execute("UPDATE posts SET is_hidden = 1 WHERE user_id = ?", user_id)
+    flash(f"User #{user_id} has been suspended and their posts hidden.", "warning")
+    return redirect("/admin/reports")
+
+
+# ==============================================================================
+# CUSTOM ERROR HANDLERS (404, 500)
+# ==============================================================================
+@app.errorhandler(404)
+def not_found_error(error):
+    return render_template("404.html"), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return render_template("500.html"), 500
 
 
 if __name__ == "__main__":

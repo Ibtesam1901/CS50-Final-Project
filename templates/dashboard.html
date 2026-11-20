@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 
-{% block title %}My Dashboard{% endblock %}
+{% block title %}My Dashboard · NeighborGrid{% endblock %}
 
 {% block main %}
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
@@ -68,7 +68,7 @@
                             </div>
                             {% elif r.status == 'accepted' %}
                             <a href="/post/{{ r.post_id }}" class="btn btn-sm btn-outline-primary">
-                                <i class="fa-solid fa-eye me-1"></i> View Contacts
+                                <i class="fa-solid fa-eye me-1"></i> View Contacts / Chat
                             </a>
                             {% else %}
                             <span class="text-muted small">No action</span>
@@ -103,11 +103,16 @@
                     {% for p in my_posts %}
                     <div class="list-group-item p-3 d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
                         <div>
-                            <div class="d-flex align-items-center gap-2 mb-1">
+                            <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
                                 <span class="badge {{ 'badge-request' if p.post_type == 'request' else 'badge-offer' }} text-uppercase">
                                     {{ p.post_type }}
                                 </span>
                                 <span class="badge status-badge-{{ p.status }}">{{ p.status.replace('_', ' ') }}</span>
+                                {% if p.is_expired %}
+                                <span class="badge bg-warning text-dark border">
+                                    <i class="fa-regular fa-clock me-1"></i> Expired (>14 days)
+                                </span>
+                                {% endif %}
                                 <small class="text-muted">{{ p.created_at[:10] }}</small>
                             </div>
                             <h6 class="mb-0">
@@ -116,22 +121,56 @@
                                 </a>
                             </h6>
                         </div>
-                        <div class="d-flex gap-2 align-items-center">
+                        <div class="d-flex gap-2 align-items-center flex-wrap">
+                            {% if p.is_expired and p.status == 'open' %}
+                            <form action="/post/{{ p.id }}/repost" method="post" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                                <button type="submit" class="btn btn-sm btn-success" title="Renew / Repost this for 14 days">
+                                    <i class="fa-solid fa-arrow-rotate-right me-1"></i> Repost
+                                </button>
+                            </form>
+                            {% endif %}
+
                             {% if p.status == 'open' %}
                             <a href="/post/{{ p.id }}/edit" class="btn btn-sm btn-outline-primary" title="Edit">
                                 <i class="fa-solid fa-pen"></i>
                             </a>
-                            <form action="/post/{{ p.id }}/cancel" method="post" onsubmit="return confirm('Cancel this post?');">
+                            <form action="/post/{{ p.id }}/cancel" method="post" onsubmit="return confirm('Cancel this post?');" class="d-inline">
                                 <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
-                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Cancel">
+                                <button type="submit" class="btn btn-sm btn-outline-warning" title="Cancel">
                                     <i class="fa-solid fa-ban"></i>
                                 </button>
                             </form>
+                            <form action="/post/{{ p.id }}/delete" method="post" onsubmit="return confirm('Permanently delete this post?');" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </form>
                             {% elif p.status == 'in_progress' %}
-                            <form action="/post/{{ p.id }}/complete" method="post" onsubmit="return confirm('Mark as completed?');">
+                            <form action="/post/{{ p.id }}/complete" method="post" onsubmit="return confirm('Mark as completed?');" class="d-inline">
                                 <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
                                 <button type="submit" class="btn btn-sm btn-success" title="Mark Complete">
-                                    <i class="fa-solid fa-check"></i> Complete
+                                    <i class="fa-solid fa-check"></i>
+                                </button>
+                            </form>
+                            <form action="/post/{{ p.id }}/cancel" method="post" onsubmit="return confirm('Cancel this post?');" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                                <button type="submit" class="btn btn-sm btn-outline-warning" title="Cancel">
+                                    <i class="fa-solid fa-ban"></i>
+                                </button>
+                            </form>
+                            <form action="/post/{{ p.id }}/delete" method="post" onsubmit="return confirm('Permanently delete this post?');" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </form>
+                            {% else %}
+                            <form action="/post/{{ p.id }}/delete" method="post" onsubmit="return confirm('Permanently delete this post?');" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                    <i class="fa-solid fa-trash"></i>
                                 </button>
                             </form>
                             {% endif %}

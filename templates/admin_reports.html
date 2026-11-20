@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 
-{% block title %}Admin Moderation & Reports{% endblock %}
+{% block title %}Admin Moderation & Reports · NeighborGrid{% endblock %}
 
 {% block main %}
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -8,7 +8,7 @@
         <h2 class="fw-bold mb-1 text-danger">
             <i class="fa-solid fa-triangle-exclamation me-2"></i> Moderation Dashboard
         </h2>
-        <p class="text-muted mb-0">Review community reports and moderate flagged content to keep NeighborGrid safe.</p>
+        <p class="text-muted mb-0">Review community reports, enforce the non-commercial policy, and manage community safety.</p>
     </div>
     <span class="badge bg-danger fs-6 px-3 py-2">{{ reports|length }} Reported Posts</span>
 </div>
@@ -21,11 +21,11 @@
                 <thead class="table-light small text-uppercase text-muted">
                     <tr>
                         <th class="ps-4">Reported Post</th>
-                        <th>Post Author</th>
-                        <th>Reported By</th>
+                        <th>Author</th>
+                        <th>Reporter</th>
                         <th>Reason for Report</th>
-                        <th>Visibility</th>
-                        <th class="text-end pe-4">Actions</th>
+                        <th>Status</th>
+                        <th class="text-end pe-4">Moderator Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -38,7 +38,7 @@
                             <div class="small text-muted">ID: #{{ r.post_id }} &middot; {{ r.neighborhood }}</div>
                         </td>
                         <td>
-                            <a href="/profile/{{ r.author_username }}" class="text-decoration-none">
+                            <a href="/profile/{{ r.author_username }}" class="text-decoration-none fw-semibold">
                                 {{ r.author_username }}
                             </a>
                         </td>
@@ -57,28 +57,56 @@
                             {% if r.is_hidden %}
                             <span class="badge bg-danger"><i class="fa-solid fa-eye-slash me-1"></i> Hidden</span>
                             {% else %}
-                            <span class="badge bg-success"><i class="fa-solid fa-eye me-1"></i> Visible</span>
+                            <span class="badge bg-success"><i class="fa-solid fa-eye me-1"></i> Live</span>
                             {% endif %}
                         </td>
                         <td class="text-end pe-4">
-                            {% if not r.is_hidden %}
-                            <form action="/admin/post/{{ r.post_id }}/hide" method="post" class="d-inline" onsubmit="return confirm('Hide this post from all neighborhood feeds?');">
-                                <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
-                                <button type="submit" class="btn btn-sm btn-danger">
-                                    <i class="fa-solid fa-eye-slash me-1"></i> Hide Post
-                                </button>
-                            </form>
-                            {% else %}
-                            <form action="/admin/post/{{ r.post_id }}/unhide" method="post" class="d-inline" onsubmit="return confirm('Restore this post to neighborhood feeds?');">
-                                <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
-                                <button type="submit" class="btn btn-sm btn-outline-success">
-                                    <i class="fa-solid fa-eye me-1"></i> Unhide
-                                </button>
-                            </form>
-                            {% endif %}
-                            <a href="/post/{{ r.post_id }}" class="btn btn-sm btn-outline-secondary ms-1">
-                                <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                            </a>
+                            <div class="d-inline-flex gap-1 flex-wrap justify-content-end">
+                                <!-- Dismiss Report Form -->
+                                <form action="/admin/report/{{ r.id }}/dismiss" method="post" class="d-inline" onsubmit="return confirm('Dismiss this report?');">
+                                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Dismiss report">
+                                        <i class="fa-solid fa-check me-1"></i> Dismiss
+                                    </button>
+                                </form>
+
+                                <!-- Toggle Hide / Unhide Form -->
+                                {% if not r.is_hidden %}
+                                <form action="/admin/post/{{ r.post_id }}/hide" method="post" class="d-inline" onsubmit="return confirm('Hide this post from all neighborhood feeds?');">
+                                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                                    <button type="submit" class="btn btn-sm btn-warning" title="Hide post">
+                                        <i class="fa-solid fa-eye-slash me-1"></i> Hide
+                                    </button>
+                                </form>
+                                {% else %}
+                                <form action="/admin/post/{{ r.post_id }}/unhide" method="post" class="d-inline" onsubmit="return confirm('Restore this post to neighborhood feeds?');">
+                                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-success" title="Restore post">
+                                        <i class="fa-solid fa-eye me-1"></i> Restore
+                                    </button>
+                                </form>
+                                {% endif %}
+
+                                <!-- Permanently Remove Post Form -->
+                                <form action="/admin/post/{{ r.post_id }}/delete" method="post" class="d-inline" onsubmit="return confirm('Permanently remove this post?');">
+                                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                                    <button type="submit" class="btn btn-sm btn-danger" title="Permanently delete post">
+                                        <i class="fa-solid fa-trash me-1"></i> Remove
+                                    </button>
+                                </form>
+
+                                <!-- Ban Author Form -->
+                                <form action="/admin/user/{{ r.author_id }}/ban" method="post" class="d-inline" onsubmit="return confirm('Ban this user account for policy violations?');">
+                                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+                                    <button type="submit" class="btn btn-sm btn-dark" title="Ban user">
+                                        <i class="fa-solid fa-user-slash me-1"></i> Ban User
+                                    </button>
+                                </form>
+
+                                <a href="/post/{{ r.post_id }}" class="btn btn-sm btn-light border" title="View live post" target="_blank">
+                                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                                </a>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
