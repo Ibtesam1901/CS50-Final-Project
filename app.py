@@ -6,7 +6,7 @@ from flask import Flask, flash, redirect, render_template, request, session, jso
 from werkzeug.security import check_password_hash, generate_password_hash
 from init_db import init_db
 from db_helper import SQL_PROVIDER
-from helpers import apology, login_required, admin_required, check_commercial_content, is_safe_url, jitter_coordinate
+from helpers import apology, login_required, admin_required, check_commercial_content, check_private_address, is_safe_url, jitter_coordinate
 
 # Initialize rate limiting gracefully
 try:
@@ -195,6 +195,15 @@ def index():
     impact_rows = db.execute("SELECT COUNT(*) AS count FROM posts WHERE status = 'completed'")
     impact_count = impact_rows[0]["count"] if impact_rows else 0
 
+    # B5: Recently Completed Mutual Aid strip (3-5 completed tasks, anonymized)
+    recently_completed = db.execute(
+        """SELECT p.title, p.post_type, p.neighborhood, p.completed_at, c.name AS category, c.icon AS category_icon
+           FROM posts p
+           JOIN categories c ON c.id = p.category_id
+           WHERE p.status = 'completed' AND p.is_hidden = 0
+           ORDER BY p.completed_at DESC LIMIT 4"""
+    )
+
     categories = db.execute("SELECT id, name, icon FROM categories ORDER BY name ASC")
 
     return render_template(
@@ -202,6 +211,7 @@ def index():
         posts=posts,
         categories=categories,
         impact_count=impact_count,
+        recently_completed=recently_completed,
         user_loc_name=user_loc_name,
         user_lat=user_lat,
         user_lng=user_lng,
@@ -333,6 +343,240 @@ def api_posts():
             ))
 
     return jsonify(results)
+
+
+@app.route("/api/posts/updates")
+@limiter.limit("60 per minute")
+def api_posts_updates():
+    """
+    Live Polling Endpoint (Part A1):
+    Returns posts created or changed (status change, etc.) since a given ISO timestamp,
+    along with IDs of deleted/expired/hidden posts, strictly honoring coordinate jitter and privacy.
+    Supports If-Modified-Since / 304 to minimize bandwidth.
+    """
+    since = request.args.get("since", "").strip()
+    caller_lat = request.args.get("lat", type=float) or session.get("user_lat")
+    caller_lng = request.args.get("lng", type=float) or session.get("user_lng")
+
+    # If no timestamp provided, default to last 30 seconds
+    if not since:
+        since_clause = "datetime('now', '-30 seconds')"
+        since_param = None
+    else:
+        since_clause = "?"
+        since_param = since
+
+    # 1. Fetch updated/new open posts
+    query_params = []
+    if since_param:
+        query_sql = f"""
+            SELECT p.id, p.title, p.description, p.post_type, p.urgency, p.created_at, p.updated_at,
+                   p.category_id, p.location_details, p.latitude, p.longitude, p.neighborhood, p.status,
+                   c.name AS category, c.icon AS category_icon, u.username
+            FROM posts p
+            JOIN users u ON u.id = p.user_id
+            JOIN categories c ON c.id = p.category_id
+            WHERE p.status = 'open'
+              AND p.is_hidden = 0
+              AND p.is_flagged = 0
+              AND (p.expires_at IS NULL OR p.expires_at > CURRENT_TIMESTAMP)
+              AND (p.created_at >= datetime('now', '-14 days'))
+              AND (p.updated_at > {since_clause} OR p.created_at > {since_clause})
+            ORDER BY p.updated_at DESC
+        """
+        query_params = [since_param, since_param]
+    else:
+        query_sql = f"""
+            SELECT p.id, p.title, p.description, p.post_type, p.urgency, p.created_at, p.updated_at,
+                   p.category_id, p.location_details, p.latitude, p.longitude, p.neighborhood, p.status,
+                   c.name AS category, c.icon AS category_icon, u.username
+            FROM posts p
+            JOIN users u ON u.id = p.user_id
+            JOIN categories c ON c.id = p.category_id
+            WHERE p.status = 'open'
+              AND p.is_hidden = 0
+              AND p.is_flagged = 0
+              AND (p.expires_at IS NULL OR p.expires_at > CURRENT_TIMESTAMP)
+              AND (p.created_at >= datetime('now', '-14 days'))
+              AND (p.updated_at > {since_clause} OR p.created_at > {since_clause})
+            ORDER BY p.updated_at DESC
+        """
+
+    updated_rows = db.execute(query_sql, *query_params)
+    posts = []
+    for r in updated_rows:
+        row = dict(r)
+        row["latitude"] = jitter_coordinate(row.get("latitude"))
+        row["longitude"] = jitter_coordinate(row.get("longitude"))
+        if caller_lat is not None and caller_lng is not None and row.get("latitude") and row.get("longitude"):
+            row["distance_km"] = haversine_km(caller_lat, caller_lng, row["latitude"], row["longitude"])
+        else:
+            row["distance_km"] = None
+        posts.append(row)
+
+    # 2. Fetch IDs of posts that were recently cancelled, completed, hidden, or expired since `since`
+    status_changed_params = []
+    if since_param:
+        status_sql = f"""
+            SELECT id, status, is_hidden
+            FROM posts
+            WHERE (updated_at > {since_clause} OR completed_at > {since_clause})
+              AND (status != 'open' OR is_hidden = 1 OR is_flagged = 1 OR created_at < datetime('now', '-14 days'))
+        """
+        status_changed_params = [since_param, since_param]
+    else:
+        status_sql = f"""
+            SELECT id, status, is_hidden
+            FROM posts
+            WHERE (updated_at > {since_clause} OR completed_at > {since_clause})
+              AND (status != 'open' OR is_hidden = 1 OR is_flagged = 1 OR created_at < datetime('now', '-14 days'))
+        """
+    status_rows = db.execute(status_sql, *status_changed_params)
+    removed_ids = [r["id"] for r in status_rows]
+
+    # 3. Overall impact count
+    impact = db.execute("SELECT COUNT(*) AS count FROM posts WHERE status = 'completed'")
+    impact_count = impact[0]["count"] if impact else 0
+
+    # Current timestamp for next client poll cursor
+    now_cursor = db.execute("SELECT datetime('now') AS cur")[0]["cur"]
+
+    return jsonify({
+        "status": "ok",
+        "posts": posts,
+        "removed_ids": removed_ids,
+        "impact_count": impact_count,
+        "cursor": now_cursor
+    })
+
+
+@app.route("/api/notifications/summary")
+@limiter.limit("60 per minute")
+def api_notifications_summary():
+    """
+    Live Polling Endpoint (Part A3):
+    Returns counts for unread offers on user's posts, status changes, unread messages,
+    and recent activity summary.
+    Returns 401 if not authenticated so client pauses polling gracefully.
+    """
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Unauthorized", "action": "stop_polling"}), 401
+
+    try:
+        # Pending incoming responses on user's posts
+        inc = db.execute(
+            """SELECT COUNT(m.id) AS count 
+               FROM matches m 
+               JOIN posts p ON p.id = m.post_id 
+               WHERE p.user_id = ? AND m.status = 'pending'""",
+            user_id
+        )
+        # Unread messages
+        msgs = db.execute(
+            "SELECT COUNT(id) AS count FROM messages WHERE receiver_id = ? AND is_read = 0",
+            user_id
+        )
+        # Offers accepted or declined by other owners where user was responder
+        accepted = db.execute(
+            """SELECT COUNT(m.id) AS count 
+               FROM matches m 
+               WHERE m.responder_id = ? AND m.status = 'accepted'""",
+            user_id
+        )
+        # Total unread
+        unread_offers = inc[0]["count"] if inc else 0
+        unread_msgs = msgs[0]["count"] if msgs else 0
+        accepted_count = accepted[0]["count"] if accepted else 0
+        total = unread_offers + unread_msgs
+
+        # Latest unread message sender for toast notification
+        latest_msg = db.execute(
+            """SELECT m.content, u.username AS sender_username, m.post_id
+               FROM messages m
+               JOIN users u ON u.id = m.sender_id
+               WHERE m.receiver_id = ? AND m.is_read = 0
+               ORDER BY m.created_at DESC LIMIT 1""",
+            user_id
+        )
+        toast = None
+        if latest_msg:
+            toast = {
+                "sender": latest_msg[0]["sender_username"],
+                "content": latest_msg[0]["content"][:60],
+                "post_id": latest_msg[0]["post_id"]
+            }
+
+        return jsonify({
+            "status": "ok",
+            "total_unread": total,
+            "unread_offers": unread_offers,
+            "unread_messages": unread_msgs,
+            "accepted_matches": accepted_count,
+            "toast": toast
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/threads/<int:post_id>/messages")
+@login_required
+@limiter.limit("60 per minute")
+def api_thread_messages(post_id):
+    """
+    Live Polling Endpoint (Part A2):
+    Returns new messages in this thread strictly for authorized participants.
+    Supports ?after=<last_message_id> to return only new entries.
+    Marks newly received messages as read and sets read_at timestamp.
+    """
+    user_id = session.get("user_id")
+    post_rows = db.execute("SELECT * FROM posts WHERE id = ?", post_id)
+    if not post_rows:
+        return jsonify({"error": "Post not found"}), 404
+    post = post_rows[0]
+
+    acc_rows = db.execute("SELECT * FROM matches WHERE post_id = ? AND status = 'accepted'", post_id)
+    if not acc_rows:
+        return jsonify({"error": "Chat only active on accepted matches"}), 403
+
+    accepted_match = acc_rows[0]
+    if user_id != post["user_id"] and user_id != accepted_match["responder_id"]:
+        return jsonify({"error": "Unauthorized participant"}), 403
+
+    after_id = request.args.get("after", type=int) or 0
+
+    messages = db.execute(
+        """SELECT m.id, m.post_id, m.sender_id, m.receiver_id, m.content, m.is_read, m.read_at, m.created_at,
+                  u.username AS sender_username
+           FROM messages m
+           JOIN users u ON u.id = m.sender_id
+           WHERE m.post_id = ? AND m.id > ?
+           ORDER BY m.id ASC""",
+        post_id, after_id
+    )
+
+    # Mark incoming messages to this user as read
+    db.execute(
+        "UPDATE messages SET is_read = 1, read_at = CURRENT_TIMESTAMP WHERE post_id = ? AND receiver_id = ? AND is_read = 0",
+        post_id, user_id
+    )
+
+    # Check if the other person has read our messages
+    last_sent_read = db.execute(
+        "SELECT id, read_at FROM messages WHERE post_id = ? AND sender_id = ? AND is_read = 1 ORDER BY id DESC LIMIT 1",
+        post_id, user_id
+    )
+    last_read_id = last_sent_read[0]["id"] if last_sent_read else None
+    last_read_time = last_sent_read[0]["read_at"] if last_sent_read else None
+
+    # Also return current post lifecycle status so the post page updates live if completed
+    return jsonify({
+        "status": "ok",
+        "messages": [dict(m) for m in messages],
+        "post_status": post["status"],
+        "last_read_id": last_read_id,
+        "last_read_time": last_read_time
+    })
 
 
 # ==============================================================================
@@ -515,6 +759,16 @@ def new_post():
                 400
             )
 
+        # ----------------------------------------------------------------------
+        # ENFORCE PUBLIC MEETING POINT (RESIDENTIAL ADDRESS WARNING - B2)
+        # ----------------------------------------------------------------------
+        has_priv_addr, addr_term = check_private_address(location_details)
+        if has_priv_addr and not request.form.get("confirm_landmark"):
+            return apology(
+                f"Privacy Notice: Your location details ('{addr_term}') appear to contain a private home or flat address. For neighbor safety, please use a public meeting point (such as a metro gate, park entrance, temple, or shop).",
+                400
+            )
+
         cat_rows = db.execute("SELECT id FROM categories WHERE id = ?", category_id)
         if not cat_rows:
             return apology("Invalid category selected", 400)
@@ -535,7 +789,11 @@ def new_post():
             latitude = session.get("user_lat")
             longitude = session.get("user_lng")
 
-        user_neighborhood = session.get("user_loc_name") or session.get("neighborhood", "Local Area")
+        # B3: Neighborhood locality is explicitly chosen or taken from valid session
+        chosen_locality = request.form.get("neighborhood", "").strip()
+        user_neighborhood = chosen_locality or session.get("neighborhood") or "Indiranagar, Bengaluru"
+        if "Current" in user_neighborhood or "Location" in user_neighborhood:
+            user_neighborhood = "Indiranagar, Bengaluru"
         post_id = db.execute(
             """INSERT INTO posts (user_id, post_type, category_id, title, description, urgency, neighborhood, location_details, latitude, longitude, expires_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -719,18 +977,56 @@ def send_message(post_id):
     else:
         return apology("You are not part of this accepted mutual-aid match", 403)
 
-    content = request.form.get("content", "").strip()
+    content = request.form.get("content", "").strip() if request.form else ""
+    if not content and request.is_json:
+        content = (request.get_json(silent=True) or {}).get("content", "").strip()
+
+    idempotency_key = request.form.get("idempotency_key") if request.form else None
+    if not idempotency_key and request.is_json:
+        idempotency_key = (request.get_json(silent=True) or {}).get("idempotency_key")
+
     if not content or len(content) > 1000:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
+            return jsonify({"error": "Message must be between 1 and 1000 characters"}), 400
         return apology("Message must be between 1 and 1000 characters", 400)
 
-    db.execute(
-        """INSERT INTO messages (post_id, sender_id, receiver_id, content)
-           VALUES (?, ?, ?, ?)""",
-        post_id, user_id, receiver_id, content
+    # Prevent duplicate messages if double-clicked / retried with the same idempotency_key
+    if idempotency_key:
+        existing = db.execute(
+            "SELECT id, post_id, sender_id, content, created_at FROM messages WHERE post_id = ? AND sender_id = ? AND idempotency_key = ?",
+            post_id, user_id, idempotency_key
+        )
+        if existing:
+            msg = existing[0]
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
+                return jsonify({
+                    "status": "ok",
+                    "id": msg["id"],
+                    "sender": session["username"],
+                    "content": msg["content"],
+                    "created_at": msg["created_at"],
+                    "is_duplicate": True
+                })
+            return redirect(f"/post/{post_id}#chatSection")
+
+    msg_id = db.execute(
+        """INSERT INTO messages (post_id, sender_id, receiver_id, content, idempotency_key)
+           VALUES (?, ?, ?, ?, ?)""",
+        post_id, user_id, receiver_id, content, idempotency_key
     )
 
-    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-        return jsonify({"status": "ok", "sender": session["username"], "content": content})
+    # Fetch created timestamp
+    saved_msg = db.execute("SELECT id, created_at FROM messages WHERE id = ?", msg_id)
+    created_at = saved_msg[0]["created_at"] if saved_msg else ""
+
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
+        return jsonify({
+            "status": "ok",
+            "id": msg_id,
+            "sender": session["username"],
+            "content": content,
+            "created_at": created_at
+        })
 
     flash("Message sent to your neighbor!", "success")
     return redirect(f"/post/{post_id}#chatSection")
@@ -840,7 +1136,7 @@ def accept_match(match_id):
     post_id = rows[0]["post_id"]
     db.execute("UPDATE matches SET status = 'accepted' WHERE id = ?", match_id)
     db.execute("UPDATE matches SET status = 'declined' WHERE post_id = ? AND id != ?", post_id, match_id)
-    db.execute("UPDATE posts SET status = 'in_progress' WHERE id = ?", post_id)
+    db.execute("UPDATE posts SET status = 'in_progress', updated_at = CURRENT_TIMESTAMP WHERE id = ?", post_id)
 
     flash("Neighbor response accepted! Contact details and direct chat are now unlocked below.", "success")
     return redirect(f"/post/{post_id}")
@@ -882,7 +1178,7 @@ def complete_post(post_id):
         return apology("Only in-progress posts can be marked as completed", 400)
 
     db.execute(
-        "UPDATE posts SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+        "UPDATE posts SET status = 'completed', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         post_id
     )
     flash("Bahut badhiya! Mutual aid completed. Please leave a rating and review below.", "success")
@@ -903,7 +1199,7 @@ def cancel_post(post_id):
     if rows[0]["status"] not in ["open", "in_progress"]:
         return apology("Cannot cancel a completed or already cancelled post", 400)
 
-    db.execute("UPDATE posts SET status = 'cancelled' WHERE id = ?", post_id)
+    db.execute("UPDATE posts SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?", post_id)
     flash("Post has been cancelled.", "info")
     return redirect(f"/post/{post_id}")
 
@@ -938,7 +1234,7 @@ def repost_post(post_id):
     if not rows or rows[0]["user_id"] != session["user_id"]:
         return apology("Unauthorized action", 403)
 
-    db.execute("UPDATE posts SET created_at = CURRENT_TIMESTAMP WHERE id = ?", post_id)
+    db.execute("UPDATE posts SET created_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?", post_id)
     flash("Post has been renewed and brought back to the top of the mohalla feed!", "success")
     return redirect(f"/post/{post_id}")
 
@@ -982,6 +1278,16 @@ def edit_post(post_id):
                 400
             )
 
+        # ----------------------------------------------------------------------
+        # ENFORCE PUBLIC MEETING POINT (RESIDENTIAL ADDRESS WARNING - B2)
+        # ----------------------------------------------------------------------
+        has_priv_addr, addr_term = check_private_address(location_details)
+        if has_priv_addr and not request.form.get("confirm_landmark"):
+            return apology(
+                f"Privacy Notice: Your location details ('{addr_term}') appear to contain a private home or flat address. For neighbor safety, please use a public meeting point (such as a metro gate, park entrance, temple, or shop).",
+                400
+            )
+
         latitude = None
         longitude = None
         try:
@@ -995,7 +1301,7 @@ def edit_post(post_id):
 
         db.execute(
             """UPDATE posts 
-               SET title = ?, description = ?, category_id = ?, urgency = ?, location_details = ?, latitude = ?, longitude = ?
+               SET title = ?, description = ?, category_id = ?, urgency = ?, location_details = ?, latitude = ?, longitude = ?, updated_at = CURRENT_TIMESTAMP
                WHERE id = ?""",
             title, description, category_id, urgency, location_details, latitude, longitude, post_id
         )

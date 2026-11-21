@@ -50,15 +50,23 @@
                         <textarea class="form-control" id="description" name="description" rows="4" maxlength="1000" required>{{ post.description }}</textarea>
                     </div>
 
-                    <!-- Location & Map coordinates -->
+                    <!-- Location & Map coordinates (Landmark Protection) -->
                     <div class="card bg-light border p-3 mb-3">
                         <h6 class="fw-bold mb-2">
-                            <i class="fa-solid fa-location-dot text-danger me-1"></i> Approximate Location / Map Pin
+                            <i class="fa-solid fa-location-dot text-danger me-1"></i> Public Meeting Point &amp; Map Pin
                         </h6>
-                        <div class="row g-2">
+                        <div class="row g-2 mb-2">
                             <div class="col-md-6">
-                                <label for="location_details" class="form-label small fw-semibold">Cross Streets / Area</label>
-                                <input class="form-control form-control-sm" id="location_details" name="location_details" value="{{ post.location_details or '' }}">
+                                <label for="location_details" class="form-label small fw-semibold">
+                                    Public meeting point (not your home address) <span class="text-danger">*</span>
+                                </label>
+                                <input class="form-control form-control-sm" id="location_details" name="location_details" 
+                                       placeholder="e.g. Metro station gate, park entrance, temple, bakery, corner shop"
+                                       value="{{ post.location_details or '' }}" required>
+                                <div class="form-text small text-muted">
+                                    <i class="fa-solid fa-shield-halved text-success me-1"></i>
+                                    Keep your exact flat/house number private! Use an identifiable public landmark nearby.
+                                </div>
                             </div>
                             <div class="col-md-3 col-6">
                                 <label for="latitude" class="form-label small fw-semibold">Latitude</label>

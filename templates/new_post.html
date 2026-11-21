@@ -85,44 +85,60 @@
                         <textarea class="form-control" id="description" name="description" rows="4" maxlength="1000" placeholder="Provide details: what exactly do you need, when, approximate location in {{ session.get('neighborhood') }}, and any timing details..." required></textarea>
                     </div>
 
-                    <!-- Location / Landmark & Map Coordinates -->
+                    <!-- Location / Landmark & Map Coordinates (Landmark Protection) -->
                     <div class="card bg-light border p-3 mb-3">
                         <h6 class="fw-bold mb-2">
-                            <i class="fa-solid fa-location-dot text-danger me-1"></i> Approximate Location / Map Pin (Optional)
+                            <i class="fa-solid fa-location-dot text-danger me-1"></i> Public Meeting Point &amp; Map Pin
                         </h6>
                         <div class="row g-2 mb-2">
                             <div class="col-md-6">
-                                <label for="location_details" class="form-label small fw-semibold">Cross Streets / Area Landmark</label>
-                                <input class="form-control form-control-sm" id="location_details" name="location_details" placeholder="e.g. Near 5th Ave & Pine St Park">
+                                <label for="location_details" class="form-label small fw-semibold">
+                                    Public meeting point (not your home address) <span class="text-danger">*</span>
+                                </label>
+                                <input class="form-control form-control-sm" id="location_details" name="location_details" 
+                                       placeholder="e.g. Metro station gate, park entrance, temple, bakery, corner shop" required>
+                                <div class="form-text small text-muted">
+                                    <i class="fa-solid fa-shield-halved text-success me-1"></i>
+                                    Keep your exact flat/house number private! Use an identifiable public landmark nearby.
+                                </div>
                             </div>
                             <div class="col-md-3 col-6">
                                 <label for="latitude" class="form-label small fw-semibold">Latitude</label>
-                                <input class="form-control form-control-sm" id="latitude" name="latitude" type="number" step="any" placeholder="e.g. 40.7128">
+                                <input class="form-control form-control-sm" id="latitude" name="latitude" type="number" step="any" placeholder="e.g. 12.9784">
                             </div>
                             <div class="col-md-3 col-6">
                                 <label for="longitude" class="form-label small fw-semibold">Longitude</label>
-                                <input class="form-control form-control-sm" id="longitude" name="longitude" type="number" step="any" placeholder="e.g. -74.0060">
+                                <input class="form-control form-control-sm" id="longitude" name="longitude" type="number" step="any" placeholder="e.g. 77.6408">
                             </div>
                         </div>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span class="small text-muted">Never share your exact apartment or private door code publicly.</span>
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <span class="small text-muted"><i class="fa-solid fa-lock me-1"></i>Coordinates are jittered by ~100m on public maps for privacy.</span>
                             <button type="button" class="btn btn-outline-secondary btn-sm" id="detectLocationBtn">
-                                <i class="fa-solid fa-crosshairs me-1"></i> Use My Current Location
+                                <i class="fa-solid fa-crosshairs me-1"></i> Detect GPS Location
                             </button>
                         </div>
                     </div>
 
-                    <!-- Expiry Date & Neighborhood -->
+                    <!-- Locality & Expiry Date (B3 Fix: Required Locality Selection) -->
                     <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label for="neighborhood_select" class="form-label fw-semibold">Bengaluru Locality / Mohalla <span class="text-danger">*</span></label>
+                            <select class="form-select" id="neighborhood_select" name="neighborhood" required>
+                                <option value="Indiranagar, Bengaluru" {% if session.get('neighborhood') == 'Indiranagar, Bengaluru' %}selected{% endif %}>Indiranagar, Bengaluru</option>
+                                <option value="Koramangala, Bengaluru" {% if session.get('neighborhood') == 'Koramangala, Bengaluru' %}selected{% endif %}>Koramangala, Bengaluru</option>
+                                <option value="HSR Layout, Bengaluru" {% if session.get('neighborhood') == 'HSR Layout, Bengaluru' %}selected{% endif %}>HSR Layout, Bengaluru</option>
+                                <option value="Jayanagar, Bengaluru" {% if session.get('neighborhood') == 'Jayanagar, Bengaluru' %}selected{% endif %}>Jayanagar, Bengaluru</option>
+                                <option value="Whitefield, Bengaluru" {% if session.get('neighborhood') == 'Whitefield, Bengaluru' %}selected{% endif %}>Whitefield, Bengaluru</option>
+                                <option value="Malleshwaram, Bengaluru" {% if session.get('neighborhood') == 'Malleshwaram, Bengaluru' %}selected{% endif %}>Malleshwaram, Bengaluru</option>
+                                <option value="BTM Layout, Bengaluru" {% if session.get('neighborhood') == 'BTM Layout, Bengaluru' %}selected{% endif %}>BTM Layout, Bengaluru</option>
+                                <option value="JP Nagar, Bengaluru" {% if session.get('neighborhood') == 'JP Nagar, Bengaluru' %}selected{% endif %}>JP Nagar, Bengaluru</option>
+                            </select>
+                            <div class="form-text">Choose the active mohalla where this aid request or offer belongs.</div>
+                        </div>
                         <div class="col-md-6">
                             <label for="expires_at" class="form-label fw-semibold">Optional Expiry Date</label>
                             <input class="form-control" id="expires_at" name="expires_at" type="date">
                             <div class="form-text">Post automatically closes if not matched by this date.</div>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold">Neighborhood</label>
-                            <input class="form-control bg-light" value="{{ session.get('neighborhood') }}" disabled>
-                            <div class="form-text">Your post will automatically show to neighbors in <strong>{{ session.get('neighborhood') }}</strong>.</div>
                         </div>
                     </div>
 

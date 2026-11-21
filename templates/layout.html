@@ -3,15 +3,20 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}NeighborGrid{% endblock %} &middot; Mohalla Feed</title>
+    <title>{% block title %}Home{% endblock %} &middot; NeighborGrid</title>
     
-    <!-- Meta tags for SEO & WhatsApp / Social previews -->
-    <meta name="description" content="Hyperlocal, non-monetary mutual-aid web app for Indian neighborhoods. Borrow tools, share metro rides, offer tutoring, or help neighbors.">
-    <meta property="og:title" content="NeighborGrid &middot; Mohalla Feed">
-    <meta property="og:description" content="Hyperlocal non-commercial community aid. Borrow tools, lend ghar ka samaan, carpool, and help neighbors.">
+    <!-- Meta tags for SEO & WhatsApp / Social previews (Part B7) -->
+    <meta name="description" content="{% block meta_description %}Hyperlocal, non-monetary mutual-aid web app for Indian neighborhoods. Borrow tools, share metro rides, offer tutoring, or help neighbors.{% endblock %}">
+    <meta property="og:title" content="{% block og_title %}NeighborGrid · Mohalla Feed{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}Hyperlocal non-commercial community aid. Borrow tools, lend ghar ka samaan, carpool, and help neighbors.{% endblock %}">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="NeighborGrid">
-    <meta name="twitter:card" content="summary">
+    <meta property="og:url" content="{% block og_url %}{{ request.base_url }}{% endblock %}">
+    <meta property="og:image" content="{{ request.url_root.rstrip('/') }}/static/og-image.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{% block twitter_title %}NeighborGrid · Mohalla Feed{% endblock %}">
+    <meta name="twitter:description" content="{% block twitter_description %}Hyperlocal non-commercial community mutual aid for Indian neighborhoods.{% endblock %}">
+    <meta name="twitter:image" content="{{ request.url_root.rstrip('/') }}/static/og-image.png">
 
     <!-- Favicon -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤝</text></svg>">
@@ -53,12 +58,10 @@
                     <li class="nav-item">
                         <a class="nav-link position-relative" href="/dashboard">
                             <i class="fa-solid fa-table-columns me-1" aria-hidden="true"></i> Dashboard
-                            {% if unread_notifications_count and unread_notifications_count > 0 %}
-                            <span class="badge rounded-pill bg-danger ms-1" style="font-size: 11px;">
-                                {{ unread_notifications_count }}
+                            <span class="badge rounded-pill bg-danger ms-1 {% if not unread_notifications_count or unread_notifications_count == 0 %}d-none{% endif %}" id="navbarNotifBadge" style="font-size: 11px;">
+                                {{ unread_notifications_count or 0 }}
                                 <span class="visually-hidden">unread notifications</span>
                             </span>
-                            {% endif %}
                         </a>
                     </li>
                     <li class="nav-item">
